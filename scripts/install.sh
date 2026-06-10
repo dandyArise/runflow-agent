@@ -19,6 +19,8 @@ ARCH="$(uname -m)"
 case "$OS:$ARCH" in
   Linux:x86_64) PLATFORM="linux-x64" ;;
   Darwin:x86_64) PLATFORM="macos-x64" ;;
+  Darwin:arm64) PLATFORM="macos-arm64" ;;
+  Darwin:aarch64) PLATFORM="macos-arm64" ;;
   *) echo "unsupported platform: $OS $ARCH" >&2; exit 1 ;;
 esac
 

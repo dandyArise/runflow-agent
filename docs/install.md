@@ -82,6 +82,7 @@ The release workflow builds:
 - `windows-x64`
 - `linux-x64`
 - `macos-x64`
+- `macos-arm64`
 
 Each archive includes the binary, license, notice, README, and provider docs.
 

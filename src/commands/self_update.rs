@@ -219,6 +219,10 @@ fn platform_asset() -> Result<PlatformAsset, String> {
             platform: "macos-x64",
             binary: "runflow-agent",
         },
+        ("macos", "aarch64") => PlatformAsset {
+            platform: "macos-arm64",
+            binary: "runflow-agent",
+        },
         (os, arch) => return Err(format!("unsupported self-update platform: {os}-{arch}")),
     };
     Ok(platform)
@@ -499,6 +503,18 @@ mod tests {
         assert_eq!(
             asset_url("v0.1.3", &asset),
             "https://github.com/dandyArise/runflow-agent/releases/download/v0.1.3/runflow-agent-v0.1.3-windows-x64.zip"
+        );
+    }
+
+    #[test]
+    fn builds_macos_arm64_asset_url() {
+        let asset = PlatformAsset {
+            platform: "macos-arm64",
+            binary: "runflow-agent",
+        };
+        assert_eq!(
+            asset_url("v0.1.3", &asset),
+            "https://github.com/dandyArise/runflow-agent/releases/download/v0.1.3/runflow-agent-v0.1.3-macos-arm64.zip"
         );
     }
 
