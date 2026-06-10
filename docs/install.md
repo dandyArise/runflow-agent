@@ -1,5 +1,44 @@
 # Install RunFlow Agent
 
+## From GitHub Release
+
+Windows:
+
+```powershell
+iwr https://github.com/dandyArise/runflow-agent/releases/latest/download/install.ps1 -UseBasicParsing | iex
+```
+
+Linux/macOS:
+
+```sh
+curl -fsSL https://github.com/dandyArise/runflow-agent/releases/latest/download/install.sh | sh
+```
+
+Default install paths:
+
+```text
+Windows: %USERPROFILE%\.runflow-agent\bin
+Linux/macOS: ~/.runflow-agent/bin
+```
+
+Check the installed binary:
+
+```powershell
+runflow-agent self version
+```
+
+Update later:
+
+```powershell
+runflow-agent self update
+```
+
+Preview the update target without changing files:
+
+```powershell
+runflow-agent self update --dry-run
+```
+
 ## From Source
 
 Requires Rust stable.
@@ -45,3 +84,8 @@ The release workflow builds:
 - `macos-x64`
 
 Each archive includes the binary, license, notice, README, and provider docs.
+
+Release assets also include:
+
+- `install.ps1`
+- `install.sh`

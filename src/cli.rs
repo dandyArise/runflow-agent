@@ -21,6 +21,7 @@ pub fn run(args: Vec<String>) -> Result<CliResult, String> {
         "review" => commands::review::run(&args[2..]),
         "explain-run" => commands::explain_run::run(&args[2..]),
         "report" => commands::report::run(&args[2..]),
+        "self" => commands::self_update::run(&args[2..]),
         other => Err(format!(
             "unknown command '{other}'. Run `runflow-agent --help`."
         )),
@@ -44,6 +45,8 @@ fn help() -> CliResult {
             "  runflow-agent review <workflow.yml> [--format json]",
             "  runflow-agent explain-run <run_id> [--format json]",
             "  runflow-agent report daily [--from <iso>] [--to <iso>] [--format json]",
+            "  runflow-agent self version [--format json]",
+            "  runflow-agent self update [--version <tag>] [--install-dir <path>] [--dry-run] [--format json]",
             "",
             "Model options:",
             "  --provider mock|ollama|openai-compatible",

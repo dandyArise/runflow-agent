@@ -50,6 +50,8 @@ jobs:
           Copy-Item "NOTICE.md" $dir
           Copy-Item "README.md" $dir
           Copy-Item "docs/providers.md" $dir
+          Copy-Item "scripts/install.ps1" $dir
+          Copy-Item "scripts/install.sh" $dir
           Compress-Archive -Path "$dir/*" -DestinationPath "dist/$name.zip" -Force
 
       - name: Upload build artifact
@@ -63,6 +65,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -72,5 +77,8 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: |
+            dist/*.zip
+            scripts/install.ps1
+            scripts/install.sh
           generate_release_notes: true

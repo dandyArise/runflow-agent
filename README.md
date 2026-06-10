@@ -11,6 +11,7 @@ RunFlow Agent reads local RunFlow data, produces validated suggestions, and leav
 - `runflow-agent explain-run`: explain a run from `.flow/runs/<run_id>`, `logs/<run_id>`, events, metadata, stdout/stderr excerpts, and likely cause hints.
 - `runflow-agent report daily`: summarize local RunFlow run activity for a time window.
 - `runflow-agent doctor`: check the selected LLM provider and local RunFlow Agent workspace wiring.
+- `runflow-agent self version` / `self update`: inspect and update the installed binary from GitHub releases.
 - Local audit trail in `.flow/agent/audit.jsonl`.
 - Output contract files under `schemas/`.
 - Strict model-output decoding with bounded JSON repair for LLM-backed commands.
@@ -34,6 +35,26 @@ cargo build
 ```
 
 ## Install
+
+From GitHub release:
+
+```powershell
+iwr https://github.com/dandyArise/runflow-agent/releases/latest/download/install.ps1 -UseBasicParsing | iex
+```
+
+Linux/macOS:
+
+```sh
+curl -fsSL https://github.com/dandyArise/runflow-agent/releases/latest/download/install.sh | sh
+```
+
+Update an installed binary:
+
+```powershell
+runflow-agent self update
+```
+
+From source:
 
 ```powershell
 .\scripts\install-local.ps1
@@ -60,6 +81,8 @@ runflow-agent review .\.flow\agent\drafts\backup-logs.yml
 runflow-agent review .\.flow\agent\drafts\backup-logs.yml --format json
 runflow-agent explain-run <run_id>
 runflow-agent report daily --format json
+runflow-agent self version
+runflow-agent self update --dry-run
 ```
 
 ## Safety
