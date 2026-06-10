@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 
 use crate::agent;
 use crate::cli::CliResult;
@@ -44,6 +45,13 @@ pub fn run(args: &[String]) -> Result<CliResult, String> {
 
     let mut changed_files = Vec::new();
     if let Some(path) = output {
+        if let Some(parent) = Path::new(path).parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    format!("cannot create output directory '{}': {e}", parent.display())
+                })?;
+            }
+        }
         fs::write(path, &draft.workflow_yaml)
             .map_err(|e| format!("cannot write output '{path}': {e}"))?;
         changed_files.push(path.to_string());
@@ -72,5 +80,31 @@ mod tests {
     #[test]
     fn draft_requires_prompt_or_input() {
         assert!(run(&[]).is_err());
+    }
+
+    #[test]
+    fn draft_creates_output_parent_directories() {
+        let root = std::env::temp_dir().join(format!(
+            "runflow-agent-draft-output-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let output = root
+            .join(".flow")
+            .join("agent")
+            .join("drafts")
+            .join("ping.yml");
+        let result = run(&[
+            "--prompt".to_string(),
+            "Ping 1.1.1.1 every 5 minutes".to_string(),
+            "--output".to_string(),
+            output.to_string_lossy().to_string(),
+        ])
+        .unwrap();
+        assert_eq!(result.status, "success");
+        assert!(output.exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 }

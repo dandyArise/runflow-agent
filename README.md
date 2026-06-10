@@ -8,7 +8,7 @@ RunFlow Agent reads local RunFlow data, produces validated suggestions, and leav
 
 - `runflow-agent draft`: generate a schema-shaped RunFlow workflow YAML draft from a short request.
 - `runflow-agent review`: validate a workflow file against the embedded RunFlow schema and report risky patterns without editing it.
-- `runflow-agent explain-run`: explain a run from `.flow/runs/<run_id>` and `logs/<run_id>` data.
+- `runflow-agent explain-run`: explain a run from `.flow/runs/<run_id>`, `logs/<run_id>`, events, metadata, stdout/stderr excerpts, and likely cause hints.
 - `runflow-agent report daily`: summarize local RunFlow run activity for a time window.
 - Local audit trail in `.flow/agent/audit.jsonl`.
 - Output contract files under `schemas/`.
@@ -32,13 +32,29 @@ See [docs/providers.md](docs/providers.md).
 cargo build
 ```
 
+## Install
+
+```powershell
+.\scripts\install-local.ps1
+```
+
+See [docs/install.md](docs/install.md).
+
+## Demo
+
+```powershell
+.\demo\demo.ps1
+```
+
+See [docs/demo.md](docs/demo.md).
+
 ## Usage
 
 ```powershell
 runflow-agent draft --prompt "Ping 1.1.1.1 every 5 minutes"
-runflow-agent draft --prompt "Backup logs" --output .\workflow.yml
-runflow-agent review .\workflow.yml
-runflow-agent review .\workflow.yml --format json
+runflow-agent draft --prompt "Backup logs" --output .\.flow\agent\drafts\backup-logs.yml
+runflow-agent review .\.flow\agent\drafts\backup-logs.yml
+runflow-agent review .\.flow\agent\drafts\backup-logs.yml --format json
 runflow-agent explain-run <run_id>
 runflow-agent report daily --format json
 ```

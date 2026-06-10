@@ -10,6 +10,7 @@ use crate::strict_json::{
 };
 use crate::util;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 const MAX_REQUEST_CHARS: usize = 4_000;
 const MAX_WORKFLOW_CHARS: usize = 24_000;
@@ -43,6 +44,26 @@ pub struct DailyReport {
     pub unstable_jobs: Vec<String>,
     pub incidents: Vec<String>,
     pub recommendations: Vec<String>,
+}
+
+struct RunEvidence {
+    manifest: String,
+    events: String,
+    step_metadata: String,
+    stdout: String,
+    stderr: String,
+    sources: Vec<String>,
+}
+
+impl RunEvidence {
+    fn is_empty(&self) -> bool {
+        self.manifest.is_empty()
+            && self.events.is_empty()
+            && self.step_metadata.is_empty()
+            && self.stdout.is_empty()
+            && self.stderr.is_empty()
+            && self.sources.is_empty()
+    }
 }
 
 pub fn draft_workflow(request: &str) -> Draft {
@@ -211,35 +232,58 @@ fn review_workflow_prompt(yaml: &str) -> String {
 }
 
 pub fn explain_run(run_id: &str) -> Result<RunExplanation, String> {
-    let run_dir = Path::new(".flow").join("runs").join(run_id);
-    let logs_dir = Path::new("logs").join(run_id);
-    if !run_dir.exists() && !logs_dir.exists() {
+    let evidence_data = collect_run_evidence(run_id);
+    if evidence_data.is_empty() {
         return Err(format!("run '{run_id}' not found under .flow/runs or logs"));
     }
 
-    let manifest = read_optional(run_dir.join("manifest.json"))
-        .or_else(|| read_optional(logs_dir.join("workflow.metadata.json")))
-        .unwrap_or_default();
-    let events = read_optional(run_dir.join("events.jsonl")).unwrap_or_default();
-    let stderr = collect_named_logs(&logs_dir, "stderr.log");
-    let status = detect_status(&manifest, &events, &stderr);
-    let failed_step = detect_failed_step(&manifest, &events, &logs_dir);
+    let combined_metadata = format!(
+        "{}\n{}\n{}",
+        evidence_data.manifest, evidence_data.events, evidence_data.step_metadata
+    );
+    let status = detect_status(
+        &evidence_data.manifest,
+        &evidence_data.events,
+        &evidence_data.stderr,
+    );
+    let failed_step = if matches!(status.as_str(), "FAILED" | "ERROR") {
+        detect_failed_step(&evidence_data, &combined_metadata)
+    } else {
+        None
+    };
+    let exit_code = extract_exit_code(&combined_metadata);
+    let probable_cause = infer_probable_cause(
+        exit_code.as_deref(),
+        &evidence_data.stderr,
+        &evidence_data.events,
+    );
     let mut evidence = Vec::new();
 
-    if !manifest.is_empty() {
-        evidence.push("manifest found".to_string());
+    if !evidence_data.sources.is_empty() {
+        evidence.push(format!("sources: {}", evidence_data.sources.join(", ")));
     }
-    if !events.is_empty() {
-        evidence.push("events.jsonl found".to_string());
-    }
-    if let Some(code) = extract_exit_code(&manifest).or_else(|| extract_exit_code(&events)) {
+    if let Some(code) = &exit_code {
         evidence.push(format!("exit_code={code}"));
     }
-    if let Some(line) = stderr.lines().find(|line| !line.trim().is_empty()) {
+    if !evidence_data.events.trim().is_empty() {
+        for item in summarize_recent_events(&evidence_data.events, 3) {
+            evidence.push(item);
+        }
+    }
+    if let Some(line) = first_non_empty_line(&evidence_data.stderr) {
         evidence.push(format!(
             "stderr excerpt: {}",
             util::truncate(line.trim(), 180)
         ));
+    }
+    if let Some(line) = first_non_empty_line(&evidence_data.stdout) {
+        evidence.push(format!(
+            "stdout excerpt: {}",
+            util::truncate(line.trim(), 180)
+        ));
+    }
+    if let Some(cause) = &probable_cause {
+        evidence.push(format!("probable_cause: {cause}"));
     }
     if evidence.is_empty() {
         evidence.push(
@@ -249,10 +293,16 @@ pub fn explain_run(run_id: &str) -> Result<RunExplanation, String> {
 
     let step_text = failed_step.as_deref().unwrap_or("a step");
     let summary = if status == "FAILED" {
-        format!("{step_text} appears to have failed. Review the evidence and RunFlow logs before retrying manually.")
+        if let Some(cause) = &probable_cause {
+            format!("{step_text} appears to have failed: {cause}. Review the evidence before retrying manually.")
+        } else {
+            format!("{step_text} appears to have failed. Review the evidence and RunFlow logs before retrying manually.")
+        }
     } else {
         format!("Run status detected as {status}. No automatic action was taken.")
     };
+
+    let suggested_next_steps = suggested_run_steps(status.as_str(), probable_cause.as_deref());
 
     Ok(RunExplanation {
         run_id: run_id.to_string(),
@@ -260,11 +310,7 @@ pub fn explain_run(run_id: &str) -> Result<RunExplanation, String> {
         summary,
         failed_step,
         evidence,
-        suggested_next_steps: vec![
-            "Inspect the workflow YAML and failed step metadata.".to_string(),
-            "Check bounded stdout/stderr excerpts for the first concrete error.".to_string(),
-            "Run or retry manually with RunFlow only after reviewing the cause.".to_string(),
-        ],
+        suggested_next_steps,
     })
 }
 
@@ -505,27 +551,130 @@ fn read_optional(path: PathBuf) -> Option<String> {
     fs::read_to_string(path).ok()
 }
 
-fn collect_named_logs(root: &Path, file_name: &str) -> String {
+fn collect_run_evidence(run_id: &str) -> RunEvidence {
+    let run_dir = Path::new(".flow").join("runs").join(run_id);
+    let logs_dir = Path::new("logs").join(run_id);
+    let mut evidence = RunEvidence {
+        manifest: String::new(),
+        events: String::new(),
+        step_metadata: String::new(),
+        stdout: String::new(),
+        stderr: String::new(),
+        sources: Vec::new(),
+    };
+
+    read_source_into(
+        run_dir.join("manifest.json"),
+        &mut evidence.manifest,
+        &mut evidence.sources,
+    );
+    read_source_into(
+        logs_dir.join("workflow.metadata.json"),
+        &mut evidence.manifest,
+        &mut evidence.sources,
+    );
+    read_source_into(
+        run_dir.join("events.jsonl"),
+        &mut evidence.events,
+        &mut evidence.sources,
+    );
+    read_source_into(
+        run_dir.join("stdout.log"),
+        &mut evidence.stdout,
+        &mut evidence.sources,
+    );
+    read_source_into(
+        run_dir.join("stderr.log"),
+        &mut evidence.stderr,
+        &mut evidence.sources,
+    );
+
+    let (step_metadata, step_sources) = collect_named_files(&logs_dir, "step.metadata.json");
+    append_text(&mut evidence.step_metadata, &step_metadata);
+    evidence.sources.extend(step_sources);
+
+    let (stdout, stdout_sources) = collect_named_files(&logs_dir, "stdout.log");
+    append_text(&mut evidence.stdout, &stdout);
+    evidence.sources.extend(stdout_sources);
+
+    let (stderr, stderr_sources) = collect_named_files(&logs_dir, "stderr.log");
+    append_text(&mut evidence.stderr, &stderr);
+    evidence.sources.extend(stderr_sources);
+
+    evidence.sources.sort();
+    evidence.sources.dedup();
+    evidence
+}
+
+fn read_source_into(path: PathBuf, out: &mut String, sources: &mut Vec<String>) {
+    if let Ok(text) = read_text_lossy(&path) {
+        append_text(out, &text);
+        sources.push(path.display().to_string());
+    }
+}
+
+fn collect_named_files(root: &Path, file_name: &str) -> (String, Vec<String>) {
     let mut out = String::new();
-    if !root.exists() {
-        return out;
+    let mut sources = Vec::new();
+    collect_named_files_inner(root, file_name, 0, &mut out, &mut sources);
+    (out, sources)
+}
+
+fn collect_named_files_inner(
+    root: &Path,
+    file_name: &str,
+    depth: usize,
+    out: &mut String,
+    sources: &mut Vec<String>,
+) {
+    if depth > 3 || !root.exists() {
+        return;
     }
     let Ok(entries) = fs::read_dir(root) else {
-        return out;
+        return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if let Ok(text) = fs::read_to_string(path.join(file_name)) {
-                out.push_str(&text);
-                out.push('\n');
+            let candidate = path.join(file_name);
+            if let Ok(text) = read_text_lossy(&candidate) {
+                append_text(out, &text);
+                sources.push(candidate.display().to_string());
             }
+            collect_named_files_inner(&path, file_name, depth + 1, out, sources);
         }
     }
-    out
+}
+
+fn append_text(out: &mut String, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(text);
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+}
+
+fn read_text_lossy(path: &Path) -> Result<String, std::io::Error> {
+    fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).to_string())
 }
 
 fn detect_status(manifest: &str, events: &str, stderr: &str) -> String {
+    if let Some(status) =
+        json_field_value_from_text(manifest, &["status", "state", "outcome", "result"]).or_else(
+            || json_field_value_from_jsonl(events, &["status", "state", "outcome", "result"], true),
+        )
+    {
+        let normalized = normalize_status(&status);
+        if !normalized.is_empty() {
+            return normalized;
+        }
+    }
+
     let combined = format!("{manifest}\n{events}").to_uppercase();
     for status in [
         "FAILED",
@@ -552,26 +701,232 @@ fn detect_status(manifest: &str, events: &str, stderr: &str) -> String {
     }
 }
 
-fn detect_failed_step(manifest: &str, events: &str, logs_dir: &Path) -> Option<String> {
-    for key in ["failed_step", "step_name", "step"] {
-        if let Some(value) = util::extract_json_string(manifest, key)
-            .or_else(|| util::extract_json_string(events, key))
-        {
-            return Some(value);
+fn detect_failed_step(evidence: &RunEvidence, combined_metadata: &str) -> Option<String> {
+    if let Some(value) = json_field_value_from_text(
+        combined_metadata,
+        &[
+            "failed_step",
+            "failedStep",
+            "step_name",
+            "stepName",
+            "step_id",
+            "stepId",
+            "step",
+        ],
+    )
+    .or_else(|| {
+        json_field_value_from_jsonl(
+            &evidence.events,
+            &[
+                "failed_step",
+                "failedStep",
+                "step_name",
+                "stepName",
+                "step_id",
+                "stepId",
+                "step",
+            ],
+            true,
+        )
+    }) {
+        return Some(value);
+    }
+    infer_step_from_stderr_source(&evidence.sources)
+}
+
+fn extract_exit_code(text: &str) -> Option<String> {
+    json_field_value_from_text(text, &["exit_code", "exitCode", "code"])
+        .or_else(|| util::extract_json_number(text, "exit_code"))
+        .or_else(|| util::extract_json_number(text, "code"))
+}
+
+fn normalize_status(status: &str) -> String {
+    let value = status.trim().to_uppercase();
+    match value.as_str() {
+        "CANCELED" => "CANCELLED".to_string(),
+        "FAILURE" => "FAILED".to_string(),
+        "OK" => "SUCCESS".to_string(),
+        _ => value,
+    }
+}
+
+fn summarize_recent_events(events: &str, max: usize) -> Vec<String> {
+    events
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .rev()
+        .take(max)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(format_event_excerpt)
+        .collect()
+}
+
+fn format_event_excerpt(line: &str) -> String {
+    let line = clean_log_line(line);
+    if let Ok(value) = serde_json::from_str::<Value>(line) {
+        let mut parts = Vec::new();
+        for (label, keys) in [
+            ("time", ["timestamp", "time", "ts"].as_slice()),
+            ("event", ["event", "type", "kind"].as_slice()),
+            (
+                "status",
+                ["status", "state", "outcome", "result"].as_slice(),
+            ),
+            (
+                "step",
+                ["step", "step_name", "stepName", "step_id", "stepId"].as_slice(),
+            ),
+            ("message", ["message", "error", "reason"].as_slice()),
+        ] {
+            if let Some(found) = json_field_value(&value, keys) {
+                parts.push(format!("{label}={}", util::truncate(&found, 80)));
+            }
+        }
+        if !parts.is_empty() {
+            return format!("event: {}", parts.join(" "));
         }
     }
-    if logs_dir.exists() {
-        for entry in fs::read_dir(logs_dir).ok()?.flatten() {
-            if entry.path().join("stderr.log").exists() {
-                return Some(entry.file_name().to_string_lossy().to_string());
+    format!("event: {}", util::truncate(line.trim(), 180))
+}
+
+fn first_non_empty_line(text: &str) -> Option<&str> {
+    text.lines()
+        .map(clean_log_line)
+        .find(|line| !line.trim().is_empty())
+}
+
+fn clean_log_line(line: &str) -> &str {
+    line.trim_start_matches('\u{feff}')
+}
+
+fn infer_probable_cause(exit_code: Option<&str>, stderr: &str, events: &str) -> Option<String> {
+    let combined = format!("{stderr}\n{events}").to_lowercase();
+    if combined.contains("timed out") || combined.contains("timeout") {
+        return Some("the step appears to have timed out".to_string());
+    }
+    if combined.contains("permission denied") || combined.contains("access is denied") {
+        return Some("the step hit a permissions error".to_string());
+    }
+    if combined.contains("not found")
+        || combined.contains("is not recognized")
+        || combined.contains("no such file")
+    {
+        return Some("a command or file path was not found".to_string());
+    }
+    if combined.contains("connection refused") || combined.contains("could not connect") {
+        return Some("a dependency endpoint refused the connection".to_string());
+    }
+    if combined.contains("authentication") || combined.contains("unauthorized") {
+        return Some("authentication or authorization failed".to_string());
+    }
+    if let Some(code) = exit_code {
+        if code != "0" {
+            return Some(format!("the failed process exited with code {code}"));
+        }
+    }
+    None
+}
+
+fn suggested_run_steps(status: &str, probable_cause: Option<&str>) -> Vec<String> {
+    if !matches!(status, "FAILED" | "ERROR") {
+        return vec![
+            "Review run logs if you need execution details.".to_string(),
+            "No automatic action was taken.".to_string(),
+        ];
+    }
+
+    let mut steps = vec![
+        "Inspect the workflow YAML and failed step metadata.".to_string(),
+        "Check bounded stdout/stderr excerpts for the first concrete error.".to_string(),
+    ];
+    if let Some(cause) = probable_cause {
+        steps.push(format!(
+            "Verify this likely cause before retrying manually: {cause}."
+        ));
+    }
+    if status == "FAILED" || status == "ERROR" {
+        steps
+            .push("Run or retry manually with RunFlow only after reviewing the cause.".to_string());
+    } else {
+        steps.push("No automatic action was taken.".to_string());
+    }
+    steps
+}
+
+fn infer_step_from_stderr_source(sources: &[String]) -> Option<String> {
+    for source in sources {
+        if !source.ends_with("stderr.log") {
+            continue;
+        }
+        let path = Path::new(source);
+        if let Some(parent) = path.parent().and_then(Path::file_name) {
+            let name = parent.to_string_lossy().to_string();
+            if !name.is_empty() {
+                return Some(name);
             }
         }
     }
     None
 }
 
-fn extract_exit_code(text: &str) -> Option<String> {
-    util::extract_json_number(text, "exit_code").or_else(|| util::extract_json_number(text, "code"))
+fn json_field_value_from_text(text: &str, keys: &[&str]) -> Option<String> {
+    if let Ok(value) = serde_json::from_str::<Value>(text) {
+        return json_field_value(&value, keys);
+    }
+    json_field_value_from_jsonl(text, keys, false)
+}
+
+fn json_field_value_from_jsonl(text: &str, keys: &[&str], reverse: bool) -> Option<String> {
+    let lines = text.lines().filter(|line| !line.trim().is_empty());
+    if reverse {
+        for line in lines.collect::<Vec<_>>().into_iter().rev() {
+            if let Ok(value) = serde_json::from_str::<Value>(line) {
+                if let Some(found) = json_field_value(&value, keys) {
+                    return Some(found);
+                }
+            }
+        }
+    } else {
+        for line in lines {
+            if let Ok(value) = serde_json::from_str::<Value>(line) {
+                if let Some(found) = json_field_value(&value, keys) {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn json_field_value(value: &Value, keys: &[&str]) -> Option<String> {
+    match value {
+        Value::Object(map) => {
+            for key in keys {
+                if let Some(value) = map.get(*key).and_then(json_scalar_to_string) {
+                    return Some(value);
+                }
+            }
+            for nested in map.values() {
+                if let Some(value) = json_field_value(nested, keys) {
+                    return Some(value);
+                }
+            }
+            None
+        }
+        Value::Array(items) => items.iter().find_map(|item| json_field_value(item, keys)),
+        _ => None,
+    }
+}
+
+fn json_scalar_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        Value::Bool(value) => Some(value.to_string()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -704,6 +1059,107 @@ mod tests {
             report.recommendations,
             vec!["Inspect failed runs with explain-run before manual retry.".to_string()]
         );
+    }
+
+    #[test]
+    fn explain_run_reads_events_metadata_and_step_logs() {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "runflow-agent-evidence-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let run_id = "run-with-logs";
+        let run_dir = root.join(".flow").join("runs").join(run_id);
+        let step_dir = root.join("logs").join(run_id).join("build");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        std::fs::create_dir_all(&step_dir).unwrap();
+        std::fs::write(run_dir.join("manifest.json"), "{\"status\":\"FAILED\"}").unwrap();
+        std::fs::write(
+            run_dir.join("events.jsonl"),
+            "{\"event\":\"step_started\",\"step\":\"build\",\"status\":\"RUNNING\"}\n{\"event\":\"step_failed\",\"step\":\"build\",\"status\":\"FAILED\",\"message\":\"command failed\"}\n",
+        )
+        .unwrap();
+        std::fs::write(step_dir.join("step.metadata.json"), "{\"exitCode\":127}").unwrap();
+        std::fs::write(step_dir.join("stdout.log"), "installing deps\n").unwrap();
+        std::fs::write(
+            step_dir.join("stderr.log"),
+            "command not found: cargo-nextest\n",
+        )
+        .unwrap();
+
+        let old_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&root).unwrap();
+        let explanation = explain_run(run_id).unwrap();
+        std::env::set_current_dir(old_dir).unwrap();
+        let _ = std::fs::remove_dir_all(root);
+
+        assert_eq!(explanation.status, "FAILED");
+        assert_eq!(explanation.failed_step.as_deref(), Some("build"));
+        assert!(explanation
+            .evidence
+            .iter()
+            .any(|item| item.contains("exit_code=127")));
+        assert!(explanation
+            .evidence
+            .iter()
+            .any(|item| item.contains("event:") && item.contains("step=build")));
+        assert!(explanation
+            .evidence
+            .iter()
+            .any(|item| item.contains("stdout excerpt: installing deps")));
+        assert!(explanation
+            .summary
+            .contains("command or file path was not found"));
+    }
+
+    #[test]
+    fn explain_run_success_has_no_failed_step() {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "runflow-agent-success-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let run_id = "run-success";
+        let run_dir = root.join(".flow").join("runs").join(run_id);
+        let step_dir = root.join("logs").join(run_id).join("ping");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        std::fs::create_dir_all(&step_dir).unwrap();
+        std::fs::write(run_dir.join("manifest.json"), "{\"status\":\"SUCCESS\"}").unwrap();
+        std::fs::write(
+            run_dir.join("events.jsonl"),
+            "{\"event_type\":\"RUN_FINISHED\",\"payload\":{\"status\":\"Success\"}}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            step_dir.join("step.metadata.json"),
+            "{\"step\":\"ping\",\"exit_code\":0}",
+        )
+        .unwrap();
+        std::fs::write(step_dir.join("stdout.log"), "Reply from 1.1.1.1").unwrap();
+
+        let old_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&root).unwrap();
+        let explanation = explain_run(run_id).unwrap();
+        std::env::set_current_dir(old_dir).unwrap();
+        let _ = std::fs::remove_dir_all(root);
+
+        assert_eq!(explanation.status, "SUCCESS");
+        assert_eq!(explanation.failed_step, None);
+        assert!(explanation.summary.contains("SUCCESS"));
+        assert!(explanation
+            .suggested_next_steps
+            .iter()
+            .any(|step| step.contains("No automatic action")));
+        assert!(explanation
+            .evidence
+            .iter()
+            .any(|item| item.contains("stdout excerpt: Reply from 1.1.1.1")));
     }
 
     #[test]

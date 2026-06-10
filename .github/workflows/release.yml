@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: linux-x64
+            binary: runflow-agent
+          - os: macos-latest
+            artifact: macos-x64
+            binary: runflow-agent
+          - os: windows-latest
+            artifact: windows-x64
+            binary: runflow-agent.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run tests
+        run: cargo test
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "runflow-agent-${{ github.ref_name }}-${{ matrix.artifact }}"
+          $dir = Join-Path "dist" $name
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "target/release/${{ matrix.binary }}" $dir
+          Copy-Item "LICENSE.md" $dir
+          Copy-Item "NOTICE.md" $dir
+          Copy-Item "README.md" $dir
+          Copy-Item "docs/providers.md" $dir
+          Compress-Archive -Path "$dir/*" -DestinationPath "dist/$name.zip" -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: runflow-agent-${{ matrix.artifact }}
+          path: dist/*.zip
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
