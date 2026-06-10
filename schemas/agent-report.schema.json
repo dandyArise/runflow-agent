@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandyarise.github.io/runflow-agent/schemas/agent-report.schema.json",
+  "title": "RunFlow Agent Daily Report Response",
+  "type": "object",
+  "required": ["kind", "period", "runs", "unstable_jobs", "incidents", "recommendations"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": { "const": "daily_report" },
+    "period": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" }
+      }
+    },
+    "runs": {
+      "type": "object",
+      "required": ["total", "success", "failed", "cancelled"],
+      "additionalProperties": false,
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "success": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "cancelled": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "unstable_jobs": { "type": "array", "items": { "type": "string" } },
+    "incidents": { "type": "array", "items": { "type": "string" } },
+    "recommendations": { "type": "array", "items": { "type": "string" } }
+  }
+}

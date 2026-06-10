@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandyarise.github.io/runflow-agent/schemas/agent-explain-run.schema.json",
+  "title": "RunFlow Agent Run Explanation Response",
+  "type": "object",
+  "required": ["kind", "run_id", "status", "summary", "failed_step", "evidence", "suggested_next_steps"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": { "const": "run_explanation" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1 },
+    "failed_step": { "type": "string" },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "suggested_next_steps": { "type": "array", "items": { "type": "string" } }
+  }
+}

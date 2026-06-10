@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandyarise.github.io/runflow-agent/schemas/agent-draft.schema.json",
+  "title": "RunFlow Agent Draft Response",
+  "type": "object",
+  "required": ["kind", "workflow_yaml", "validation", "warnings"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": { "const": "draft_workflow" },
+    "workflow_yaml": { "type": "string", "minLength": 1 },
+    "validation": {
+      "type": "object",
+      "required": ["valid", "errors"],
+      "additionalProperties": false,
+      "properties": {
+        "valid": { "type": "boolean" },
+        "errors": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  }
+}

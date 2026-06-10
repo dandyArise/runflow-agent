@@ -1,0 +1,58 @@
+# RunFlow Agent
+
+Assist-only external agent for [RunFlow](https://github.com/dandyArise/runflow).
+
+RunFlow Agent reads local RunFlow data, produces validated suggestions, and leaves execution under user control. It does not run jobs, cancel runs, rerun steps, send alerts, manage secrets, call external APIs, or execute shell commands.
+
+## Features
+
+- `runflow-agent draft`: generate a schema-shaped RunFlow workflow YAML draft from a short request.
+- `runflow-agent review`: validate a workflow file heuristically and report risky patterns without editing it.
+- `runflow-agent explain-run`: explain a run from `.flow/runs/<run_id>` and `logs/<run_id>` data.
+- `runflow-agent report daily`: summarize local RunFlow run activity for a time window.
+- Local audit trail in `.flow/agent/audit.jsonl`.
+- Output contract files under `schemas/`.
+- Strict model-output decoding with `serde_json`.
+
+## Providers
+
+Default provider is `mock`, which is deterministic and does not call a model.
+
+```powershell
+runflow-agent draft --prompt "Ping 1.1.1.1" --provider ollama --model qwen2.5-coder:1.5b
+runflow-agent review .\workflow.yml --provider openai-compatible --base-url http://localhost:1234/v1 --model qwen2.5-coder-1.5b-instruct
+```
+
+See [docs/providers.md](docs/providers.md).
+
+## Build
+
+```powershell
+cargo build
+```
+
+## Usage
+
+```powershell
+runflow-agent draft --prompt "Ping 1.1.1.1 every 5 minutes"
+runflow-agent draft --prompt "Backup logs" --output .\workflow.yml
+runflow-agent review .\workflow.yml
+runflow-agent review .\workflow.yml --format json
+runflow-agent explain-run <run_id>
+runflow-agent report daily --format json
+```
+
+## Safety
+
+V1 is deny-by-default:
+
+- no autopilot;
+- no automatic remediation;
+- no direct shell execution;
+- no job execution, cancellation, or rerun;
+- no webhooks, email, Slack, or external API calls by default;
+- no secret management.
+
+## Status
+
+This repository currently contains a local MVP with `mock`, `ollama`, and `openai-compatible` providers. Model outputs are decoded as strict JSON and rejected when the expected `kind` or required fields are missing.

@@ -1,0 +1,57 @@
+use crate::commands;
+
+pub struct CliResult {
+    pub command: String,
+    pub output: String,
+    pub status: &'static str,
+    pub changed_files: Vec<String>,
+    pub warnings: Vec<String>,
+    pub audit: bool,
+}
+
+pub fn run(args: Vec<String>) -> Result<CliResult, String> {
+    let Some(command) = args.get(1).map(String::as_str) else {
+        return Ok(help());
+    };
+
+    match command {
+        "-h" | "--help" | "help" => Ok(help()),
+        "draft" => commands::draft::run(&args[2..]),
+        "review" => commands::review::run(&args[2..]),
+        "explain-run" => commands::explain_run::run(&args[2..]),
+        "report" => commands::report::run(&args[2..]),
+        other => Err(format!(
+            "unknown command '{other}'. Run `runflow-agent --help`."
+        )),
+    }
+}
+
+fn help() -> CliResult {
+    CliResult {
+        command: "help".to_string(),
+        status: "success",
+        changed_files: Vec::new(),
+        warnings: Vec::new(),
+        audit: false,
+        output: [
+            "RunFlow Agent",
+            "",
+            "Usage:",
+            "  runflow-agent draft --prompt <text> [--output <workflow.yml>]",
+            "  runflow-agent draft --input <request.txt> [--output <workflow.yml>]",
+            "  runflow-agent review <workflow.yml> [--format json]",
+            "  runflow-agent explain-run <run_id> [--format json]",
+            "  runflow-agent report daily [--from <iso>] [--to <iso>] [--format json]",
+            "",
+            "Model options:",
+            "  --provider mock|ollama|openai-compatible",
+            "  --base-url <http-url>",
+            "  --model <name>",
+            "  --api-key-env <ENV_NAME>",
+            "  --timeout-seconds <n>",
+            "",
+            "Safety: assist-only; no job execution, cancellation, shell execution, alerts, secrets, or external API calls.",
+        ]
+        .join("\n"),
+    }
+}

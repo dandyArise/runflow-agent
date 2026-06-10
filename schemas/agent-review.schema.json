@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandyarise.github.io/runflow-agent/schemas/agent-review.schema.json",
+  "title": "RunFlow Agent Workflow Review Response",
+  "type": "object",
+  "required": ["kind", "valid", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": { "const": "workflow_review" },
+    "valid": { "type": "boolean" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "path", "message", "suggestion"],
+        "additionalProperties": false,
+        "properties": {
+          "severity": { "enum": ["info", "warning", "error"] },
+          "path": { "type": "string" },
+          "message": { "type": "string", "minLength": 1 },
+          "suggestion": { "type": "string" }
+        }
+      }
+    }
+  }
+}
