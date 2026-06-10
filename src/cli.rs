@@ -16,6 +16,7 @@ pub fn run(args: Vec<String>) -> Result<CliResult, String> {
 
     match command {
         "-h" | "--help" | "help" => Ok(help()),
+        "doctor" => commands::doctor::run(&args[2..]),
         "draft" => commands::draft::run(&args[2..]),
         "review" => commands::review::run(&args[2..]),
         "explain-run" => commands::explain_run::run(&args[2..]),
@@ -37,6 +38,7 @@ fn help() -> CliResult {
             "RunFlow Agent",
             "",
             "Usage:",
+            "  runflow-agent doctor [--root <path>] [--format json]",
             "  runflow-agent draft --prompt <text> [--output <workflow.yml>]",
             "  runflow-agent draft --input <request.txt> [--output <workflow.yml>]",
             "  runflow-agent review <workflow.yml> [--format json]",

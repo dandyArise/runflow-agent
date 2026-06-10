@@ -58,6 +58,17 @@ jobs:
           name: runflow-agent-${{ matrix.artifact }}
           path: dist/*.zip
 
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:

@@ -920,9 +920,17 @@ footer p { font-size: .77rem; color: var(--text-dim); }
 <!-- COMMANDS -->
 <section id="commands" style="padding-top:0">
   <div class="s-label" data-fr="Commandes CLI" data-en="CLI Commands">Commandes CLI</div>
-  <h2 data-fr="Quatre commandes, <em>zéro mutation.</em>" data-en="Four commands, <em>zero mutation.</em>">Quatre commandes, <em>zéro mutation.</em></h2>
+  <h2 data-fr="Cinq commandes, <em>zéro mutation.</em>" data-en="Five commands, <em>zero mutation.</em>">Cinq commandes, <em>zéro mutation.</em></h2>
 
   <div class="reveal">
+    <div class="cmd-group">
+      <div class="cmd-group-title" data-fr="Doctor" data-en="Doctor">Doctor</div>
+      <div class="cmd-list">
+        <div class="cmd-row"><span class="cmd-name">runflow-agent doctor</span><span class="cmd-desc" data-fr="Teste le provider LLM et le workspace agent sans lancer de workflow" data-en="Check the LLM provider and agent workspace without running workflows">Teste le provider LLM et le workspace agent sans lancer de workflow</span><span class="cmd-eg">runflow-agent doctor</span></div>
+        <div class="cmd-row"><span class="cmd-name">--root</span><span class="cmd-desc" data-fr="Diagnostique un workspace RunFlow précis" data-en="Diagnose a specific RunFlow workspace">Diagnostique un workspace RunFlow précis</span><span class="cmd-eg">runflow-agent doctor --root C:\path\to\workspace</span></div>
+        <div class="cmd-row"><span class="cmd-name">--format json</span><span class="cmd-desc" data-fr="Retourne les checks provider/workspace structurés" data-en="Return structured provider/workspace checks">Retourne les checks provider/workspace structurés</span><span class="cmd-eg">runflow-agent doctor --format json</span></div>
+      </div>
+    </div>
     <div class="cmd-group">
       <div class="cmd-group-title" data-fr="Draft" data-en="Draft">Draft</div>
       <div class="cmd-list">
@@ -1028,7 +1036,7 @@ footer p { font-size: .77rem; color: var(--text-dim); }
       <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="CLI agent autonome" data-en="Standalone agent CLI">CLI agent autonome</span></div>
       <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="Mode assist-only unique" data-en="Single assist-only mode">Mode assist-only unique</span></div>
       <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="Providers mock, Ollama et OpenAI-compatible" data-en="Mock, Ollama, and OpenAI-compatible providers">Providers mock, Ollama et OpenAI-compatible</span></div>
-      <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="Draft, review, explain-run, report daily" data-en="Draft, review, explain-run, report daily">Draft, review, explain-run, report daily</span></div>
+      <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="Doctor, draft, review, explain-run, report daily" data-en="Doctor, draft, review, explain-run, report daily">Doctor, draft, review, explain-run, report daily</span></div>
       <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="Sorties JSON Schema validées" data-en="JSON Schema validated outputs">Sorties JSON Schema validées</span></div>
       <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="YAML et sorties JSON validés" data-en="YAML and JSON outputs validated">YAML et sorties JSON validés</span></div>
       <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="Policy deny-by-default" data-en="Deny-by-default policy">Policy deny-by-default</span></div>

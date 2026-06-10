@@ -10,6 +10,7 @@ RunFlow Agent reads local RunFlow data, produces validated suggestions, and leav
 - `runflow-agent review`: validate a workflow file against the embedded RunFlow schema and report risky patterns without editing it.
 - `runflow-agent explain-run`: explain a run from `.flow/runs/<run_id>`, `logs/<run_id>`, events, metadata, stdout/stderr excerpts, and likely cause hints.
 - `runflow-agent report daily`: summarize local RunFlow run activity for a time window.
+- `runflow-agent doctor`: check the selected LLM provider and local RunFlow Agent workspace wiring.
 - Local audit trail in `.flow/agent/audit.jsonl`.
 - Output contract files under `schemas/`.
 - Strict model-output decoding with bounded JSON repair for LLM-backed commands.
@@ -51,6 +52,8 @@ See [docs/demo.md](docs/demo.md).
 ## Usage
 
 ```powershell
+runflow-agent doctor
+runflow-agent doctor --provider openai-compatible --base-url http://localhost:1234/v1 --model qwen/qwen3-coder-30b --timeout-seconds 120
 runflow-agent draft --prompt "Ping 1.1.1.1 every 5 minutes"
 runflow-agent draft --prompt "Backup logs" --output .\.flow\agent\drafts\backup-logs.yml
 runflow-agent review .\.flow\agent\drafts\backup-logs.yml

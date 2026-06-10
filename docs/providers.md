@@ -45,6 +45,7 @@ POST /api/chat
 Example:
 
 ```powershell
+runflow-agent doctor --provider ollama --model qwen2.5-coder:1.5b
 runflow-agent draft --prompt "Ping 1.1.1.1 every 5 minutes" --provider ollama --model qwen2.5-coder:1.5b
 ```
 
@@ -69,6 +70,7 @@ POST /v1/chat/completions
 Example:
 
 ```powershell
+runflow-agent doctor --provider openai-compatible --base-url http://localhost:1234/v1 --model qwen/qwen3-coder-30b --timeout-seconds 120
 runflow-agent draft --prompt "Ping 1.1.1.1 every 5 minutes" --provider openai-compatible --base-url http://localhost:1234/v1 --model qwen/qwen3-coder-30b --timeout-seconds 120
 ```
 
@@ -94,6 +96,8 @@ Reference: [OpenAI Chat Completions](https://developers.openai.com/api/reference
 ## Output Rules
 
 All providers must return strict JSON only. RunFlow Agent rejects model output that does not contain the required fields for the active command.
+
+Use `runflow-agent doctor` before a first LLM-backed command. It verifies provider connectivity and reports missing local `.flow/` agent folders as warnings without running any workflow.
 
 The agent remains assist-only:
 
