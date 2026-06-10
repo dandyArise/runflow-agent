@@ -9,6 +9,8 @@ repository = "https://github.com/dandyArise/runflow-agent"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
+jsonschema = "0.46.5"
 
 [profile.release]
 strip = true

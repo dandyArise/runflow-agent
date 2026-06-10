@@ -1,9 +1,9 @@
-use std::collections::HashSet;
-
 pub struct Validation {
     pub valid: bool,
     pub messages: Vec<String>,
 }
+
+const WORKFLOW_SCHEMA: &str = include_str!("schema_defs/v1/workflow.schema.json");
 
 #[derive(Clone)]
 pub struct Finding {
@@ -37,89 +37,54 @@ impl Finding {
 }
 
 pub fn validate_workflow(yaml: &str) -> Validation {
-    let mut messages = Vec::new();
     if yaml.trim().is_empty() {
-        messages.push("workflow is empty".to_string());
         return Validation {
             valid: false,
-            messages,
+            messages: vec!["workflow is empty".to_string()],
         };
     }
 
-    let allowed = allowed_top_level_fields();
-    let mut has_name = false;
-    let mut has_steps = false;
-    let mut has_bad_tabs = false;
+    let instance = match serde_yaml::from_str::<serde_json::Value>(yaml) {
+        Ok(value) => value,
+        Err(error) => {
+            return Validation {
+                valid: false,
+                messages: vec![format!("failed to parse workflow YAML: {error}")],
+            };
+        }
+    };
 
-    for (idx, line) in yaml.lines().enumerate() {
-        if line.contains('\t') {
-            has_bad_tabs = true;
+    let schema = match serde_json::from_str::<serde_json::Value>(WORKFLOW_SCHEMA) {
+        Ok(value) => value,
+        Err(error) => {
+            return Validation {
+                valid: false,
+                messages: vec![format!("failed to parse embedded workflow schema: {error}")],
+            };
         }
-        let trimmed = line.trim();
-        if trimmed.is_empty()
-            || trimmed.starts_with('#')
-            || line.starts_with(' ')
-            || line.starts_with('-')
-        {
-            continue;
-        }
-        if let Some((key, _)) = trimmed.split_once(':') {
-            let key = key.trim();
-            if key == "name" {
-                has_name = true;
-            }
-            if key == "steps" {
-                has_steps = true;
-            }
-            if !allowed.contains(key) {
-                messages.push(format!(
-                    "unknown top-level field '{key}' at line {}",
-                    idx + 1
-                ));
-            }
-        }
-    }
+    };
 
-    if !has_name {
-        messages.push("missing required top-level field 'name'".to_string());
-    }
-    if !has_steps {
-        messages.push("missing top-level field 'steps'".to_string());
-    }
-    if has_bad_tabs {
-        messages.push("YAML contains tab indentation".to_string());
-    }
-    if yaml.contains("type: command") && !yaml.contains("run:") {
-        messages.push("command step is missing run block".to_string());
-    }
-    if yaml.contains("run:") && !(yaml.contains("command:") || yaml.contains("args:")) {
-        messages.push("run block should use structured command and optional args".to_string());
-    }
+    let validator = match jsonschema::validator_for(&schema) {
+        Ok(validator) => validator,
+        Err(error) => {
+            return Validation {
+                valid: false,
+                messages: vec![format!(
+                    "failed to compile embedded workflow schema: {error}"
+                )],
+            };
+        }
+    };
+
+    let messages = validator
+        .iter_errors(&instance)
+        .map(|error| format!("{}: {}", error.instance_path(), error))
+        .collect::<Vec<_>>();
 
     Validation {
         valid: messages.is_empty(),
         messages,
     }
-}
-
-fn allowed_top_level_fields() -> HashSet<&'static str> {
-    [
-        "name",
-        "version",
-        "schema_version",
-        "schedule",
-        "failure_policy",
-        "concurrency",
-        "limits",
-        "locks",
-        "secrets",
-        "notifications",
-        "retention",
-        "steps",
-        "tests",
-    ]
-    .into_iter()
-    .collect()
 }
 
 #[cfg(test)]
@@ -136,5 +101,39 @@ mod tests {
     fn rejects_unknown_field() {
         let yaml = "name: demo\nunknown: true\nsteps: []\n";
         assert!(!validate_workflow(yaml).valid);
+    }
+
+    #[test]
+    fn rejects_invalid_name_and_version() {
+        let yaml = "name: Bad Name\nversion: 0\nschema_version: 1\nsteps: []\n";
+        let validation = validate_workflow(yaml);
+        assert!(!validation.valid);
+        assert!(validation
+            .messages
+            .iter()
+            .any(|item| item.contains("/name")));
+        assert!(validation
+            .messages
+            .iter()
+            .any(|item| item.contains("/version")));
+    }
+
+    #[test]
+    fn rejects_invalid_step_type() {
+        let yaml = "name: demo\nsteps:\n  - name: bad\n    type: unknown\n";
+        let validation = validate_workflow(yaml);
+        assert!(!validation.valid);
+        assert!(validation.messages.iter().any(|item| item.contains("type")));
+    }
+
+    #[test]
+    fn rejects_invalid_yaml() {
+        let yaml = "name: demo\nsteps:\n  - name: bad\n    type: command\n   nope";
+        let validation = validate_workflow(yaml);
+        assert!(!validation.valid);
+        assert!(validation
+            .messages
+            .iter()
+            .any(|item| item.contains("failed to parse workflow YAML")));
     }
 }

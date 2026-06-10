@@ -25,7 +25,11 @@ fn main() -> ExitCode {
                     &result.warnings,
                 );
             }
-            ExitCode::SUCCESS
+            if result.status == "failed" {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            }
         }
         Err(err) => {
             eprintln!("error: {}", err);

@@ -55,3 +55,35 @@ fn help() -> CliResult {
         .join("\n"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn review_invalid_workflow_returns_failed_status() {
+        let path = std::env::temp_dir().join(format!(
+            "runflow-agent-invalid-{}.yml",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(
+            &path,
+            "name: Bad Name\nversion: 0\nunknown: true\nsteps: []\n",
+        )
+        .unwrap();
+        let result = run(vec![
+            "runflow-agent".to_string(),
+            "review".to_string(),
+            path.to_string_lossy().to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+        ])
+        .unwrap();
+        let _ = std::fs::remove_file(path);
+        assert_eq!(result.status, "failed");
+        assert!(result.output.contains("\"valid\":false"));
+    }
+}

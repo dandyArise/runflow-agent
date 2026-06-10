@@ -7,7 +7,7 @@ RunFlow Agent reads local RunFlow data, produces validated suggestions, and leav
 ## Features
 
 - `runflow-agent draft`: generate a schema-shaped RunFlow workflow YAML draft from a short request.
-- `runflow-agent review`: validate a workflow file heuristically and report risky patterns without editing it.
+- `runflow-agent review`: validate a workflow file against the embedded RunFlow schema and report risky patterns without editing it.
 - `runflow-agent explain-run`: explain a run from `.flow/runs/<run_id>` and `logs/<run_id>` data.
 - `runflow-agent report daily`: summarize local RunFlow run activity for a time window.
 - Local audit trail in `.flow/agent/audit.jsonl`.
@@ -55,4 +55,4 @@ V1 is deny-by-default:
 
 ## Status
 
-This repository currently contains a local MVP with `mock`, `ollama`, and `openai-compatible` providers. Model outputs are decoded as strict JSON and rejected when the expected `kind` or required fields are missing.
+This repository currently contains a local MVP with `mock`, `ollama`, and `openai-compatible` providers. Model outputs are decoded as strict JSON and rejected when the expected `kind` or required fields are missing. Generated workflow YAML is validated against the embedded RunFlow workflow schema.
