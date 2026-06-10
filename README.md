@@ -12,7 +12,7 @@ RunFlow Agent reads local RunFlow data, produces validated suggestions, and leav
 - `runflow-agent report daily`: summarize local RunFlow run activity for a time window.
 - Local audit trail in `.flow/agent/audit.jsonl`.
 - Output contract files under `schemas/`.
-- Strict model-output decoding with `serde_json`.
+- Strict model-output decoding with bounded JSON repair for LLM-backed commands.
 - Draft validation and bounded repair pass when an LLM returns schema-invalid YAML.
 
 ## Providers

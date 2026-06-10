@@ -5,10 +5,11 @@ use crate::config::ModelConfig;
 use crate::model;
 use crate::runflow::Finding;
 use crate::strict_json::{
-    decode_model_json, DailyReportModelResponse, DraftModelResponse, ReviewModelResponse,
-    RunExplanationModelResponse,
+    decode_model_json, DailyReportModelResponse, DraftModelResponse, ModelKind,
+    ReviewModelResponse, RunExplanationModelResponse,
 };
 use crate::util;
+use serde::de::DeserializeOwned;
 
 const MAX_REQUEST_CHARS: usize = 4_000;
 const MAX_WORKFLOW_CHARS: usize = 24_000;
@@ -196,13 +197,17 @@ pub fn review_workflow_with_model(
     }
 
     let system = strict_json_system("Return only a workflow_review JSON object.");
-    let user = format!(
-        "Review this workflow YAML. Detect schema issues, missing timeouts, risky shell usage, broad env usage, suspicious commands, unbounded output, raw secrets, and unknown fields. Do not edit the file.\n\nWorkflow YAML:\n{}\n\nReturn exactly this JSON shape:\n{{\"kind\":\"workflow_review\",\"valid\":true,\"findings\":[{{\"severity\":\"warning\",\"path\":\"/steps/0/run\",\"message\":\"...\",\"suggestion\":\"...\"}}]}}",
-        util::truncate(yaml, MAX_WORKFLOW_CHARS)
-    );
+    let user = review_workflow_prompt(yaml);
     let raw = model::chat(config, system, &user)?;
-    findings.extend(parse_findings(&raw)?);
+    findings.extend(parse_findings_with_repair(&raw, config)?);
     Ok(findings)
+}
+
+fn review_workflow_prompt(yaml: &str) -> String {
+    format!(
+        "Review this RunFlow workflow YAML. Do not edit the file.\n\nFocus on:\n- schema issues and unknown fields;\n- missing command step timeouts;\n- risky shell control tokens, broad env usage, suspicious commands, raw secrets, and unbounded output;\n- findings that are actionable for a human reviewer.\n\nRules:\n- Return strict JSON only.\n- Severity must be one of error, warning, info.\n- Path must be a JSON-pointer-like path such as /steps/0/run.\n- Suggest manual review or an explicit YAML change; never suggest automatic execution.\n\nWorkflow YAML:\n{}\n\nReturn exactly this JSON shape:\n{{\"kind\":\"workflow_review\",\"valid\":true,\"findings\":[{{\"severity\":\"warning\",\"path\":\"/steps/0/run\",\"message\":\"...\",\"suggestion\":\"...\"}}]}}",
+        util::truncate(yaml, MAX_WORKFLOW_CHARS)
+    )
 }
 
 pub fn explain_run(run_id: &str) -> Result<RunExplanation, String> {
@@ -272,8 +277,29 @@ pub fn explain_run_with_model(
         return Ok(explanation);
     }
 
-    let user = format!(
-        "Explain this run from structured local evidence. Do not propose automatic retry or cancellation.\n\nrun_id: {}\nstatus: {}\nfailed_step: {}\nevidence:\n{}\n\nReturn exactly this JSON shape:\n{{\"kind\":\"run_explanation\",\"summary\":\"...\",\"suggested_next_steps\":[\"...\"]}}",
+    let user = explain_run_prompt(&explanation);
+    let raw = model::chat(
+        config,
+        strict_json_system("Return only a run_explanation JSON object."),
+        &user,
+    )?;
+    let parsed: RunExplanationModelResponse = decode_model_json_with_repair(
+        &raw,
+        "run_explanation",
+        "{\"kind\":\"run_explanation\",\"summary\":\"...\",\"suggested_next_steps\":[\"...\"]}",
+        config,
+    )?;
+    explanation.summary = parsed.summary;
+    let steps = parsed.suggested_next_steps;
+    if !steps.is_empty() {
+        explanation.suggested_next_steps = steps;
+    }
+    Ok(explanation)
+}
+
+fn explain_run_prompt(explanation: &RunExplanation) -> String {
+    format!(
+        "Explain this RunFlow run from structured local evidence. Do not invent missing logs. Do not propose automatic retry, cancellation, notification, or command execution.\n\nRules:\n- Return strict JSON only.\n- summary must be concise and evidence-based.\n- suggested_next_steps must be manual, bounded, and safe.\n- Prefer checking workflow YAML, failed step metadata, stdout/stderr excerpts, and RunFlow logs.\n\nrun_id: {}\nstatus: {}\nfailed_step: {}\nevidence:\n{}\n\nReturn exactly this JSON shape:\n{{\"kind\":\"run_explanation\",\"summary\":\"...\",\"suggested_next_steps\":[\"...\"]}}",
         explanation.run_id,
         explanation.status,
         explanation.failed_step.as_deref().unwrap_or(""),
@@ -286,19 +312,7 @@ pub fn explain_run_with_model(
                 .join("\n"),
             MAX_EVIDENCE_CHARS
         )
-    );
-    let raw = model::chat(
-        config,
-        strict_json_system("Return only a run_explanation JSON object."),
-        &user,
-    )?;
-    let parsed: RunExplanationModelResponse = decode_model_json(&raw, "run_explanation")?;
-    explanation.summary = parsed.summary;
-    let steps = parsed.suggested_next_steps;
-    if !steps.is_empty() {
-        explanation.suggested_next_steps = steps;
-    }
-    Ok(explanation)
+    )
 }
 
 pub fn daily_report(from: &str, to: &str) -> Result<DailyReport, String> {
@@ -364,8 +378,28 @@ pub fn daily_report_with_model(
         return Ok(report);
     }
 
-    let user = format!(
-        "Create manual recommendations for this local daily report. Do not suggest sending alerts or automatically running commands.\n\n{}\n\nReturn exactly this JSON shape:\n{{\"kind\":\"daily_report\",\"recommendations\":[\"...\"]}}",
+    let user = daily_report_prompt(&report);
+    let raw = model::chat(
+        config,
+        strict_json_system("Return only a daily_report JSON object."),
+        &user,
+    )?;
+    let parsed: DailyReportModelResponse = decode_model_json_with_repair(
+        &raw,
+        "daily_report",
+        "{\"kind\":\"daily_report\",\"recommendations\":[\"...\"]}",
+        config,
+    )?;
+    let recommendations = parsed.recommendations;
+    if !recommendations.is_empty() {
+        report.recommendations = recommendations;
+    }
+    Ok(report)
+}
+
+fn daily_report_prompt(report: &DailyReport) -> String {
+    format!(
+        "Create manual recommendations for this local RunFlow daily report.\n\nRules:\n- Return strict JSON only.\n- Do not suggest sending alerts, editing secrets, mutating workflows, or automatically running commands.\n- Recommendations must be concrete and based only on the provided counts/incidents.\n- If no runs exist, say what local data should be checked next.\n\n{}\n\nReturn exactly this JSON shape:\n{{\"kind\":\"daily_report\",\"recommendations\":[\"...\"]}}",
         util::truncate(
             &format!(
                 "period: {} -> {}\nruns: total={} success={} failed={} cancelled={}\nincidents: {}",
@@ -383,18 +417,7 @@ pub fn daily_report_with_model(
             ),
             MAX_REPORT_CHARS
         )
-    );
-    let raw = model::chat(
-        config,
-        strict_json_system("Return only a daily_report JSON object."),
-        &user,
-    )?;
-    let parsed: DailyReportModelResponse = decode_model_json(&raw, "daily_report")?;
-    let recommendations = parsed.recommendations;
-    if !recommendations.is_empty() {
-        report.recommendations = recommendations;
-    }
-    Ok(report)
+    )
 }
 
 fn strict_json_system(task: &str) -> &'static str {
@@ -402,9 +425,58 @@ fn strict_json_system(task: &str) -> &'static str {
     "You are RunFlow Agent. You are assist-only. Return strict JSON only. No markdown, no prose, no tool calls. Never execute, cancel, rerun, schedule, notify, edit secrets, call external APIs, or mutate project state."
 }
 
-fn parse_findings(raw: &str) -> Result<Vec<Finding>, String> {
-    let parsed: ReviewModelResponse = decode_model_json(raw, "workflow_review")?;
+fn parse_findings_with_repair(raw: &str, config: &ModelConfig) -> Result<Vec<Finding>, String> {
+    let parsed: ReviewModelResponse = decode_model_json_with_repair(
+        raw,
+        "workflow_review",
+        "{\"kind\":\"workflow_review\",\"valid\":true,\"findings\":[{\"severity\":\"warning\",\"path\":\"/steps/0/run\",\"message\":\"...\",\"suggestion\":\"...\"}]}",
+        config,
+    )?;
     Ok(parsed.findings.into_iter().map(Finding::from).collect())
+}
+
+fn decode_model_json_with_repair<T>(
+    raw: &str,
+    expected_kind: &str,
+    expected_shape: &str,
+    config: &ModelConfig,
+) -> Result<T, String>
+where
+    T: DeserializeOwned + ModelKind,
+{
+    match decode_model_json(raw, expected_kind) {
+        Ok(parsed) => Ok(parsed),
+        Err(original_error) => {
+            let user =
+                repair_model_json_prompt(raw, &original_error, expected_kind, expected_shape);
+            let repaired_raw = model::chat(
+                config,
+                strict_json_system("Repair model JSON output."),
+                &user,
+            )
+            .map_err(|repair_error| {
+                format!("{original_error}; failed to repair model output: {repair_error}")
+            })?;
+            decode_model_json(&repaired_raw, expected_kind).map_err(|repair_error| {
+                format!("{original_error}; repaired model output is still invalid: {repair_error}")
+            })
+        }
+    }
+}
+
+fn repair_model_json_prompt(
+    raw: &str,
+    decode_error: &str,
+    expected_kind: &str,
+    expected_shape: &str,
+) -> String {
+    format!(
+        "Repair the previous model output so it is valid strict JSON for RunFlow Agent.\n\nRules:\n- Return one JSON object only.\n- No markdown, prose, comments, or trailing text.\n- Preserve the useful intent from the invalid output when possible.\n- The kind field must be exactly \"{}\".\n- Use this exact shape:\n{}\n\nDecode error:\n{}\n\nInvalid output:\n{}",
+        expected_kind,
+        expected_shape,
+        util::truncate(decode_error, MAX_REPORT_CHARS),
+        util::truncate(raw, MAX_REPORT_CHARS)
+    )
 }
 
 fn extract_every_minutes(text: &str) -> Option<u32> {
@@ -507,7 +579,7 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
 
@@ -551,6 +623,87 @@ mod tests {
         assert!(prompt.contains("failed schema validation"));
         assert!(prompt.contains("/schedule: true is not valid"));
         assert!(prompt.contains("Invalid workflow_yaml"));
+    }
+
+    #[test]
+    fn review_prompt_documents_safety_constraints() {
+        let prompt = review_workflow_prompt("name: demo\nsteps: []\n");
+        assert!(prompt.contains("Severity must be one of error, warning, info"));
+        assert!(prompt.contains("never suggest automatic execution"));
+        assert!(prompt.contains("workflow_review"));
+    }
+
+    #[test]
+    fn explain_prompt_documents_safety_constraints() {
+        let prompt = explain_run_prompt(&RunExplanation {
+            run_id: "run-1".to_string(),
+            status: "FAILED".to_string(),
+            summary: "failed".to_string(),
+            failed_step: Some("task".to_string()),
+            evidence: vec!["stderr excerpt: nope".to_string()],
+            suggested_next_steps: Vec::new(),
+        });
+        assert!(prompt.contains("Do not invent missing logs"));
+        assert!(prompt.contains("manual, bounded, and safe"));
+        assert!(prompt.contains("run_explanation"));
+    }
+
+    #[test]
+    fn daily_report_prompt_documents_safety_constraints() {
+        let prompt = daily_report_prompt(&DailyReport {
+            from: "2026-06-10".to_string(),
+            to: "2026-06-11".to_string(),
+            total: 1,
+            success: 0,
+            failed: 1,
+            cancelled: 0,
+            unstable_jobs: Vec::new(),
+            incidents: vec!["run-1".to_string()],
+            recommendations: Vec::new(),
+        });
+        assert!(prompt.contains("Do not suggest sending alerts"));
+        assert!(prompt.contains("based only on the provided counts"));
+        assert!(prompt.contains("daily_report"));
+    }
+
+    #[test]
+    fn review_repairs_invalid_json_output() {
+        let config = test_provider_sequence(vec![
+            "```json\n{\"kind\":\"workflow_review\",\"valid\":true,\"findings\":[]}\n```",
+            "{\"kind\":\"workflow_review\",\"valid\":true,\"findings\":[{\"severity\":\"warning\",\"path\":\"/steps/0/run\",\"message\":\"Command step has no timeout.\",\"suggestion\":\"Add timeout: 30s.\"}]}",
+        ]);
+        let findings = review_workflow_with_model(
+            "name: demo\nsteps:\n  - name: task\n    type: command\n    run:\n      command: echo\n",
+            &config,
+        )
+        .unwrap();
+        assert!(findings
+            .iter()
+            .any(|finding| finding.message.contains("Command step has no timeout")));
+    }
+
+    #[test]
+    fn explain_run_repairs_invalid_json_output() {
+        let config = test_provider_sequence(vec![
+            "{\"kind\":\"run_explanation\",\"suggested_next_steps\":[]}",
+            "{\"kind\":\"run_explanation\",\"summary\":\"The task failed with exit code 1.\",\"suggested_next_steps\":[\"Inspect stderr before retrying manually.\"]}",
+        ]);
+        let explanation = explain_run_with_model_for_test(&config).unwrap();
+        assert!(explanation.summary.contains("exit code 1"));
+        assert!(explanation.suggested_next_steps[0].contains("manually"));
+    }
+
+    #[test]
+    fn daily_report_repairs_invalid_json_output() {
+        let config = test_provider_sequence(vec![
+            "Recommendations: inspect failed runs",
+            "{\"kind\":\"daily_report\",\"recommendations\":[\"Inspect failed runs with explain-run before manual retry.\"]}",
+        ]);
+        let report = daily_report_with_model_for_test(&config).unwrap();
+        assert_eq!(
+            report.recommendations,
+            vec!["Inspect failed runs with explain-run before manual retry.".to_string()]
+        );
     }
 
     #[test]
@@ -601,25 +754,62 @@ mod tests {
         result
     }
 
+    fn daily_report_with_model_for_test(config: &ModelConfig) -> Result<DailyReport, String> {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "runflow-agent-report-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let old_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&root).unwrap();
+        let result = daily_report_with_model("2026-06-10", "2026-06-11", config);
+        std::env::set_current_dir(old_dir).unwrap();
+        let _ = std::fs::remove_dir_all(root);
+        result
+    }
+
     fn test_provider(model_content: &'static str) -> ModelConfig {
+        test_provider_sequence(vec![model_content])
+    }
+
+    fn test_provider_sequence(model_contents: Vec<&'static str>) -> ModelConfig {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        thread::spawn(move || {
-            if let Ok((mut stream, _)) = listener.accept() {
-                let mut buf = [0u8; 4096];
-                let _ = stream.read(&mut buf);
-                let escaped = crate::json::escape(model_content);
-                let body = format!(
-                    "{{\"choices\":[{{\"message\":{{\"role\":\"assistant\",\"content\":\"{}\"}}}}]}}",
-                    escaped
-                );
-                let response = format!(
+        let responses = Arc::new(Mutex::new(
+            model_contents
+                .into_iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+        ));
+        let server_responses = Arc::clone(&responses);
+        thread::spawn(move || loop {
+            let model_content = {
+                let mut locked = server_responses.lock().unwrap();
+                if locked.is_empty() {
+                    break;
+                }
+                locked.remove(0)
+            };
+            let Ok((mut stream, _)) = listener.accept() else {
+                break;
+            };
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let escaped = crate::json::escape(&model_content);
+            let body = format!(
+                "{{\"choices\":[{{\"message\":{{\"role\":\"assistant\",\"content\":\"{}\"}}}}]}}",
+                escaped
+            );
+            let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     body.len(),
                     body
                 );
-                let _ = stream.write_all(response.as_bytes());
-            }
+            let _ = stream.write_all(response.as_bytes());
         });
         ModelConfig {
             provider: "openai-compatible".to_string(),
