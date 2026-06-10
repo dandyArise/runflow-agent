@@ -89,10 +89,7 @@ pub fn draft_workflow_with_model(request: &str, config: &ModelConfig) -> Result<
     }
 
     let system = strict_json_system("Return only a draft_workflow JSON object.");
-    let user = format!(
-        "Create a workflow draft for this request:\n\n{}\n\nAllowed top-level fields: name, version, schema_version, schedule, failure_policy, concurrency, limits, locks, secrets, notifications, retention, steps, tests.\nAllowed step types: command, plugin, sleep, wait_until.\nPrefer structured run.command and run.args. Include timeouts for command steps. Do not inline secrets. Do not run anything.\n\nReturn exactly this JSON shape:\n{{\"kind\":\"draft_workflow\",\"workflow_yaml\":\"<yaml>\",\"warnings\":[\"...\"]}}",
-        util::truncate(request, MAX_REQUEST_CHARS)
-    );
+    let user = draft_workflow_prompt(request);
     let raw = model::chat(config, system, &user)?;
     let parsed: DraftModelResponse = decode_model_json(&raw, "draft_workflow")?;
     let workflow_yaml = parsed.workflow_yaml;
@@ -101,6 +98,47 @@ pub fn draft_workflow_with_model(request: &str, config: &ModelConfig) -> Result<
         workflow_yaml,
         warnings,
     })
+}
+
+pub fn repair_draft_workflow_with_model(
+    request: &str,
+    draft: &Draft,
+    validation_errors: &[String],
+    config: &ModelConfig,
+) -> Result<Draft, String> {
+    if config.is_mock() {
+        return Ok(draft_workflow(request));
+    }
+
+    let system = strict_json_system("Return only a repaired draft_workflow JSON object.");
+    let user = repair_draft_workflow_prompt(request, &draft.workflow_yaml, validation_errors);
+    let raw = model::chat(config, system, &user)?;
+    let parsed: DraftModelResponse = decode_model_json(&raw, "draft_workflow")?;
+    Ok(Draft {
+        workflow_yaml: parsed.workflow_yaml,
+        warnings: parsed.warnings,
+    })
+}
+
+fn draft_workflow_prompt(request: &str) -> String {
+    format!(
+        "Create a RunFlow workflow draft for this request:\n\n{}\n\nSchema constraints:\n- Return only JSON, no markdown and no prose.\n- workflow_yaml must be valid YAML for the embedded RunFlow workflow schema.\n- Prefer a minimal workflow with only name, version, schema_version, schedule, and steps unless the request explicitly requires more.\n- Do not add optional top-level fields unless needed by the request.\n- Top-level name must be kebab-case: lowercase letters, digits, and hyphens only; no spaces, underscores, dots, or uppercase.\n- Step names must use lowercase letters, digits, hyphens, or underscores; no dots, spaces, or uppercase.\n- schedule must be false, a cron string, or an object with cron/timezone/enabled. Never use schedule: true.\n- Allowed top-level fields: name, version, schema_version, schedule, failure_policy, concurrency, limits, locks, secrets, notifications, retention, steps, tests.\n- If concurrency is required, policy must be one of allow, forbid, queue, replace.\n- Allowed step types: command, plugin, sleep, wait_until.\n- For command steps, put timeout at the step level as a duration string such as timeout: 30s.\n- Never put timeout inside run.\n- Prefer structured run.command and run.args. Do not inline secrets. Do not run anything.\n\nValid YAML example:\nname: ping-monitor\nversion: 1\nschema_version: 1\nschedule: false\nsteps:\n  - name: ping\n    type: command\n    timeout: 30s\n    run:\n      command: ping\n      args: [\"-n\", \"4\", \"1.1.1.1\"]\n\nReturn exactly this JSON shape:\n{{\"kind\":\"draft_workflow\",\"workflow_yaml\":\"<yaml>\",\"warnings\":[\"...\"]}}",
+        util::truncate(request, MAX_REQUEST_CHARS)
+    )
+}
+
+fn repair_draft_workflow_prompt(
+    request: &str,
+    workflow_yaml: &str,
+    validation_errors: &[String],
+) -> String {
+    format!(
+        "{}\n\nThe previous workflow_yaml failed schema validation. Repair only the workflow_yaml and keep the original intent.\n\nOriginal request:\n{}\n\nValidation errors:\n{}\n\nInvalid workflow_yaml:\n{}",
+        draft_workflow_prompt(request),
+        util::truncate(request, MAX_REQUEST_CHARS),
+        util::truncate(&validation_errors.join("\n"), MAX_REPORT_CHARS),
+        util::truncate(workflow_yaml, MAX_WORKFLOW_CHARS)
+    )
 }
 
 pub fn review_workflow(yaml: &str) -> Vec<Finding> {
@@ -491,6 +529,28 @@ mod tests {
             "name: demo\nsteps:\n  - name: x\n    type: command\n    run:\n      command: echo\n",
         );
         assert!(findings.iter().any(|f| f.message.contains("timeout")));
+    }
+
+    #[test]
+    fn draft_prompt_documents_schema_constraints() {
+        let prompt = draft_workflow_prompt("Ping 1.1.1.1");
+        assert!(prompt.contains("Top-level name must be kebab-case"));
+        assert!(prompt.contains("Never put timeout inside run"));
+        assert!(prompt.contains("Never use schedule: true"));
+        assert!(prompt.contains("allow, forbid, queue, replace"));
+        assert!(prompt.contains("timeout: 30s\n    run:"));
+    }
+
+    #[test]
+    fn repair_prompt_includes_validation_errors() {
+        let prompt = repair_draft_workflow_prompt(
+            "Ping 1.1.1.1",
+            "name: Bad Name\nschedule: true\n",
+            &["/schedule: true is not valid".to_string()],
+        );
+        assert!(prompt.contains("failed schema validation"));
+        assert!(prompt.contains("/schedule: true is not valid"));
+        assert!(prompt.contains("Invalid workflow_yaml"));
     }
 
     #[test]

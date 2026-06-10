@@ -13,6 +13,7 @@ RunFlow Agent reads local RunFlow data, produces validated suggestions, and leav
 - Local audit trail in `.flow/agent/audit.jsonl`.
 - Output contract files under `schemas/`.
 - Strict model-output decoding with `serde_json`.
+- Draft validation and bounded repair pass when an LLM returns schema-invalid YAML.
 
 ## Providers
 
@@ -20,7 +21,7 @@ Default provider is `mock`, which is deterministic and does not call a model.
 
 ```powershell
 runflow-agent draft --prompt "Ping 1.1.1.1" --provider ollama --model qwen2.5-coder:1.5b
-runflow-agent review .\workflow.yml --provider openai-compatible --base-url http://localhost:1234/v1 --model qwen2.5-coder-1.5b-instruct
+runflow-agent draft --prompt "Ping 1.1.1.1 every 5 minutes" --provider openai-compatible --base-url http://localhost:1234/v1 --model qwen/qwen3-coder-30b --timeout-seconds 120
 ```
 
 See [docs/providers.md](docs/providers.md).

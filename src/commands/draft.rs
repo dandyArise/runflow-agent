@@ -21,8 +21,20 @@ pub fn run(args: &[String]) -> Result<CliResult, String> {
         (None, None) => return Err("draft requires --prompt <text> or --input <file>".to_string()),
     };
 
-    let draft = agent::draft_workflow_with_model(&request, &model_config)?;
-    let validation = runflow::validate_workflow(&draft.workflow_yaml);
+    let mut draft = agent::draft_workflow_with_model(&request, &model_config)?;
+    let mut validation = runflow::validate_workflow(&draft.workflow_yaml);
+    for _ in 0..2 {
+        if validation.valid || model_config.is_mock() {
+            break;
+        }
+        draft = agent::repair_draft_workflow_with_model(
+            &request,
+            &draft,
+            &validation.messages,
+            &model_config,
+        )?;
+        validation = runflow::validate_workflow(&draft.workflow_yaml);
+    }
     if !validation.valid {
         return Err(format!(
             "internal draft failed validation: {}",
