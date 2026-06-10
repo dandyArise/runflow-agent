@@ -55,6 +55,39 @@ struct RunEvidence {
     sources: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct HostContext {
+    os: &'static str,
+    family: &'static str,
+}
+
+impl HostContext {
+    fn current() -> Self {
+        Self {
+            os: std::env::consts::OS,
+            family: std::env::consts::FAMILY,
+        }
+    }
+
+    fn command_target(&self) -> String {
+        format!("{} ({})", self.os, self.family)
+    }
+
+    fn ping_count_flag(&self) -> &'static str {
+        match self.family {
+            "windows" => "-n",
+            _ => "-c",
+        }
+    }
+
+    fn wrong_ping_count_flag(&self) -> &'static str {
+        match self.family {
+            "windows" => "-c",
+            _ => "-n",
+        }
+    }
+}
+
 impl RunEvidence {
     fn is_empty(&self) -> bool {
         self.manifest.is_empty()
@@ -114,8 +147,8 @@ pub fn draft_workflow_with_model(request: &str, config: &ModelConfig) -> Result<
     let user = draft_workflow_prompt(request);
     let raw = model::chat(config, system, &user)?;
     let parsed: DraftModelResponse = decode_model_json(&raw, "draft_workflow")?;
-    let workflow_yaml = parsed.workflow_yaml;
-    let warnings = parsed.warnings;
+    let mut warnings = parsed.warnings;
+    let workflow_yaml = adapt_workflow_for_host(parsed.workflow_yaml, &mut warnings);
     Ok(Draft {
         workflow_yaml,
         warnings,
@@ -136,16 +169,23 @@ pub fn repair_draft_workflow_with_model(
     let user = repair_draft_workflow_prompt(request, &draft.workflow_yaml, validation_errors);
     let raw = model::chat(config, system, &user)?;
     let parsed: DraftModelResponse = decode_model_json(&raw, "draft_workflow")?;
+    let mut warnings = parsed.warnings;
+    let workflow_yaml = adapt_workflow_for_host(parsed.workflow_yaml, &mut warnings);
     Ok(Draft {
-        workflow_yaml: parsed.workflow_yaml,
-        warnings: parsed.warnings,
+        workflow_yaml,
+        warnings,
     })
 }
 
 fn draft_workflow_prompt(request: &str) -> String {
+    let host = HostContext::current();
     format!(
-        "Create a RunFlow workflow draft for this request:\n\n{}\n\nSchema constraints:\n- Return only JSON, no markdown and no prose.\n- workflow_yaml must be valid YAML for the embedded RunFlow workflow schema.\n- Prefer a minimal workflow with only name, version, schema_version, schedule, and steps unless the request explicitly requires more.\n- Do not add optional top-level fields unless needed by the request.\n- Top-level name must be kebab-case: lowercase letters, digits, and hyphens only; no spaces, underscores, dots, or uppercase.\n- Step names must use lowercase letters, digits, hyphens, or underscores; no dots, spaces, or uppercase.\n- schedule must be false, a cron string, or an object with cron/timezone/enabled. Never use schedule: true.\n- Allowed top-level fields: name, version, schema_version, schedule, failure_policy, concurrency, limits, locks, secrets, notifications, retention, steps, tests.\n- If concurrency is required, policy must be one of allow, forbid, queue, replace.\n- Allowed step types: command, plugin, sleep, wait_until.\n- For command steps, put timeout at the step level as a duration string such as timeout: 30s.\n- Never put timeout inside run.\n- Prefer structured run.command and run.args. Do not inline secrets. Do not run anything.\n\nValid YAML example:\nname: ping-monitor\nversion: 1\nschema_version: 1\nschedule: false\nsteps:\n  - name: ping\n    type: command\n    timeout: 30s\n    run:\n      command: ping\n      args: [\"-n\", \"4\", \"1.1.1.1\"]\n\nReturn exactly this JSON shape:\n{{\"kind\":\"draft_workflow\",\"workflow_yaml\":\"<yaml>\",\"warnings\":[\"...\"]}}",
-        util::truncate(request, MAX_REQUEST_CHARS)
+        "Create a RunFlow workflow draft for this request:\n\n{}\n\nHost context:\n- Target host OS: {}\n- Target host family: {}\n- Ping count flag for this host: {}\n- Generate commands and arguments compatible with this host.\n\nSchema constraints:\n- Return only JSON, no markdown and no prose.\n- workflow_yaml must be valid YAML for the embedded RunFlow workflow schema.\n- Prefer a minimal workflow with only name, version, schema_version, schedule, and steps unless the request explicitly requires more.\n- Do not add optional top-level fields unless needed by the request.\n- Top-level name must be kebab-case: lowercase letters, digits, and hyphens only; no spaces, underscores, dots, or uppercase.\n- Step names must use lowercase letters, digits, hyphens, or underscores; no dots, spaces, or uppercase.\n- schedule must be false, a cron string, or an object with cron/timezone/enabled. Never use schedule: true.\n- Allowed top-level fields: name, version, schema_version, schedule, failure_policy, concurrency, limits, locks, secrets, notifications, retention, steps, tests.\n- If concurrency is required, policy must be one of allow, forbid, queue, replace.\n- Allowed step types: command, plugin, sleep, wait_until.\n- For command steps, put timeout at the step level as a duration string such as timeout: 30s.\n- Never put timeout inside run.\n- Prefer structured run.command and run.args. Do not inline secrets. Do not run anything.\n\nValid YAML example for this host:\nname: ping-monitor\nversion: 1\nschema_version: 1\nschedule: false\nsteps:\n  - name: ping\n    type: command\n    timeout: 30s\n    run:\n      command: ping\n      args: [\"{}\", \"4\", \"1.1.1.1\"]\n\nReturn exactly this JSON shape:\n{{\"kind\":\"draft_workflow\",\"workflow_yaml\":\"<yaml>\",\"warnings\":[\"...\"]}}",
+        util::truncate(request, MAX_REQUEST_CHARS),
+        host.os,
+        host.family,
+        host.ping_count_flag(),
+        host.ping_count_flag()
     )
 }
 
@@ -161,6 +201,130 @@ fn repair_draft_workflow_prompt(
         util::truncate(&validation_errors.join("\n"), MAX_REPORT_CHARS),
         util::truncate(workflow_yaml, MAX_WORKFLOW_CHARS)
     )
+}
+
+fn adapt_workflow_for_host(workflow_yaml: String, warnings: &mut Vec<String>) -> String {
+    let host = HostContext::current();
+    let Ok(mut value) = serde_yaml::from_str::<serde_yaml::Value>(&workflow_yaml) else {
+        return workflow_yaml;
+    };
+    let mut changed = false;
+
+    if let Some(steps) = value
+        .as_mapping_mut()
+        .and_then(|root| root.get_mut(yaml_key("steps")))
+        .and_then(serde_yaml::Value::as_sequence_mut)
+    {
+        for step in steps {
+            if adapt_ping_step_for_host(step, host) {
+                changed = true;
+            }
+        }
+    }
+
+    if !changed {
+        return workflow_yaml;
+    }
+
+    warnings.push(format!(
+        "Adjusted ping args for {}: use {} for count.",
+        host.command_target(),
+        host.ping_count_flag()
+    ));
+    serde_yaml::to_string(&value).unwrap_or(workflow_yaml)
+}
+
+fn adapt_ping_step_for_host(step: &mut serde_yaml::Value, host: HostContext) -> bool {
+    let Some(run) = step
+        .as_mapping_mut()
+        .and_then(|step_map| step_map.get_mut(yaml_key("run")))
+        .and_then(serde_yaml::Value::as_mapping_mut)
+    else {
+        return false;
+    };
+    let command_is_ping = run
+        .get(yaml_key("command"))
+        .and_then(serde_yaml::Value::as_str)
+        .map(|command| command.eq_ignore_ascii_case("ping"))
+        .unwrap_or(false);
+    if !command_is_ping {
+        return false;
+    }
+    let Some(args) = run
+        .get_mut(yaml_key("args"))
+        .and_then(serde_yaml::Value::as_sequence_mut)
+    else {
+        return false;
+    };
+    let Some(first) = args.first_mut() else {
+        return false;
+    };
+    let Some(flag) = first.as_str() else {
+        return false;
+    };
+    if flag == host.wrong_ping_count_flag() {
+        *first = serde_yaml::Value::String(host.ping_count_flag().to_string());
+        true
+    } else {
+        false
+    }
+}
+
+fn review_host_command_args(yaml: &str) -> Vec<Finding> {
+    let host = HostContext::current();
+    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(yaml) else {
+        return Vec::new();
+    };
+    let Some(steps) = value
+        .as_mapping()
+        .and_then(|root| root.get(yaml_key("steps")))
+        .and_then(serde_yaml::Value::as_sequence)
+    else {
+        return Vec::new();
+    };
+
+    let mut findings = Vec::new();
+    for (index, step) in steps.iter().enumerate() {
+        let Some(run) = step
+            .as_mapping()
+            .and_then(|step_map| step_map.get(yaml_key("run")))
+            .and_then(serde_yaml::Value::as_mapping)
+        else {
+            continue;
+        };
+        let command_is_ping = run
+            .get(yaml_key("command"))
+            .and_then(serde_yaml::Value::as_str)
+            .map(|command| command.eq_ignore_ascii_case("ping"))
+            .unwrap_or(false);
+        if !command_is_ping {
+            continue;
+        }
+        let first_arg = run
+            .get(yaml_key("args"))
+            .and_then(serde_yaml::Value::as_sequence)
+            .and_then(|args| args.first())
+            .and_then(serde_yaml::Value::as_str);
+        if first_arg == Some(host.wrong_ping_count_flag()) {
+            findings.push(Finding::warning(
+                &format!("/steps/{index}/run/args/0"),
+                &format!(
+                    "Ping count flag '{}' does not match target host OS '{}'.",
+                    host.wrong_ping_count_flag(),
+                    host.command_target()
+                ),
+                &format!(
+                    "Use '{}' for ping count on this host before running with RunFlow.",
+                    host.ping_count_flag()
+                ),
+            ));
+        }
+    }
+    findings
+}
+
+fn yaml_key(key: &str) -> serde_yaml::Value {
+    serde_yaml::Value::String(key.to_string())
 }
 
 pub fn review_workflow(yaml: &str) -> Vec<Finding> {
@@ -205,6 +369,7 @@ pub fn review_workflow(yaml: &str) -> Vec<Finding> {
             "Review env scope and avoid broad or sensitive values.",
         ));
     }
+    findings.extend(review_host_command_args(yaml));
     findings
 }
 
@@ -220,15 +385,79 @@ pub fn review_workflow_with_model(
     let system = strict_json_system("Return only a workflow_review JSON object.");
     let user = review_workflow_prompt(yaml);
     let raw = model::chat(config, system, &user)?;
-    findings.extend(parse_findings_with_repair(&raw, config)?);
+    findings.extend(
+        parse_findings_with_repair(&raw, config)?
+            .into_iter()
+            .filter(|finding| !is_spurious_host_ping_finding(yaml, finding)),
+    );
     Ok(findings)
 }
 
 fn review_workflow_prompt(yaml: &str) -> String {
+    let host = HostContext::current();
     format!(
-        "Review this RunFlow workflow YAML. Do not edit the file.\n\nFocus on:\n- schema issues and unknown fields;\n- missing command step timeouts;\n- risky shell control tokens, broad env usage, suspicious commands, raw secrets, and unbounded output;\n- findings that are actionable for a human reviewer.\n\nRules:\n- Return strict JSON only.\n- Severity must be one of error, warning, info.\n- Path must be a JSON-pointer-like path such as /steps/0/run.\n- Suggest manual review or an explicit YAML change; never suggest automatic execution.\n\nWorkflow YAML:\n{}\n\nReturn exactly this JSON shape:\n{{\"kind\":\"workflow_review\",\"valid\":true,\"findings\":[{{\"severity\":\"warning\",\"path\":\"/steps/0/run\",\"message\":\"...\",\"suggestion\":\"...\"}}]}}",
+        "Review this RunFlow workflow YAML. Do not edit the file.\n\nHost context:\n- Target host OS: {}\n- Target host family: {}\n- Ping count flag for this host: {}\n\nFocus on:\n- schema issues and unknown fields;\n- missing command step timeouts;\n- command arguments that do not match the target host;\n- risky shell control tokens, broad env usage, suspicious commands, raw secrets, and unbounded output;\n- findings that are actionable for a human reviewer.\n\nRules:\n- Return strict JSON only.\n- Severity must be one of error, warning, info.\n- Path must be a JSON-pointer-like path such as /steps/0/run.\n- Suggest manual review or an explicit YAML change; never suggest automatic execution.\n- Prefer commands compatible with the target host.\n- Do not flag ping args [\"{}\", \"4\", \"<host>\"] as incompatible on this host.\n- Do not invent alternate ping flags for this host.\n- Do not suggest target metadata; this workflow schema has no target OS metadata field.\n\nWorkflow YAML:\n{}\n\nReturn exactly this JSON shape:\n{{\"kind\":\"workflow_review\",\"valid\":true,\"findings\":[{{\"severity\":\"warning\",\"path\":\"/steps/0/run\",\"message\":\"...\",\"suggestion\":\"...\"}}]}}",
+        host.os,
+        host.family,
+        host.ping_count_flag(),
+        host.ping_count_flag(),
         util::truncate(yaml, MAX_WORKFLOW_CHARS)
     )
+}
+
+fn is_spurious_host_ping_finding(yaml: &str, finding: &Finding) -> bool {
+    if !workflow_has_host_compatible_ping(yaml) {
+        return false;
+    }
+    let text = format!(
+        "{}\n{}\n{}",
+        finding.path, finding.message, finding.suggestion
+    )
+    .to_lowercase();
+    text.contains("ping")
+        && (text.contains("target host")
+            || text.contains("target context")
+            || text.contains("target metadata")
+            || text.contains("windows-specific")
+            || text.contains("target host family")
+            || text.contains("fully compatible")
+            || text.contains("execution context")
+            || text.contains("supported on the target"))
+}
+
+fn workflow_has_host_compatible_ping(yaml: &str) -> bool {
+    let host = HostContext::current();
+    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(yaml) else {
+        return false;
+    };
+    let Some(steps) = value
+        .as_mapping()
+        .and_then(|root| root.get(yaml_key("steps")))
+        .and_then(serde_yaml::Value::as_sequence)
+    else {
+        return false;
+    };
+
+    steps.iter().any(|step| {
+        let Some(run) = step
+            .as_mapping()
+            .and_then(|step_map| step_map.get(yaml_key("run")))
+            .and_then(serde_yaml::Value::as_mapping)
+        else {
+            return false;
+        };
+        let command_is_ping = run
+            .get(yaml_key("command"))
+            .and_then(serde_yaml::Value::as_str)
+            .map(|command| command.eq_ignore_ascii_case("ping"))
+            .unwrap_or(false);
+        let first_arg = run
+            .get(yaml_key("args"))
+            .and_then(serde_yaml::Value::as_sequence)
+            .and_then(|args| args.first())
+            .and_then(serde_yaml::Value::as_str);
+        command_is_ping && first_arg == Some(host.ping_count_flag())
+    })
 }
 
 pub fn explain_run(run_id: &str) -> Result<RunExplanation, String> {
@@ -660,7 +889,57 @@ fn append_text(out: &mut String, text: &str) {
 }
 
 fn read_text_lossy(path: &Path) -> Result<String, std::io::Error> {
-    fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).to_string())
+    fs::read(path).map(|bytes| decode_log_bytes(&bytes))
+}
+
+fn decode_log_bytes(bytes: &[u8]) -> String {
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return text.to_string();
+    }
+    bytes.iter().map(|byte| decode_oem_byte(*byte)).collect()
+}
+
+fn decode_oem_byte(byte: u8) -> char {
+    if byte.is_ascii() {
+        return byte as char;
+    }
+    match byte {
+        0x80 => 'Ç',
+        0x81 => 'ü',
+        0x82 => 'é',
+        0x83 => 'â',
+        0x84 => 'ä',
+        0x85 => 'à',
+        0x86 => 'å',
+        0x87 => 'ç',
+        0x88 => 'ê',
+        0x89 => 'ë',
+        0x8a => 'è',
+        0x8b => 'ï',
+        0x8c => 'î',
+        0x8d => 'ì',
+        0x8e => 'Ä',
+        0x8f => 'Å',
+        0x90 => 'É',
+        0x91 => 'æ',
+        0x92 => 'Æ',
+        0x93 => 'ô',
+        0x94 => 'ö',
+        0x95 => 'ò',
+        0x96 => 'û',
+        0x97 => 'ù',
+        0x98 => 'ÿ',
+        0x99 => 'Ö',
+        0x9a => 'Ü',
+        0xa0 => 'á',
+        0xa1 => 'í',
+        0xa2 => 'ó',
+        0xa3 => 'ú',
+        0xa4 => 'ñ',
+        0xa5 => 'Ñ',
+        0xff => '\u{00a0}',
+        _ => '�',
+    }
 }
 
 fn detect_status(manifest: &str, events: &str, stderr: &str) -> String {
@@ -960,12 +1239,64 @@ mod tests {
 
     #[test]
     fn draft_prompt_documents_schema_constraints() {
+        let host = HostContext::current();
         let prompt = draft_workflow_prompt("Ping 1.1.1.1");
         assert!(prompt.contains("Top-level name must be kebab-case"));
         assert!(prompt.contains("Never put timeout inside run"));
         assert!(prompt.contains("Never use schedule: true"));
         assert!(prompt.contains("allow, forbid, queue, replace"));
         assert!(prompt.contains("timeout: 30s\n    run:"));
+        assert!(prompt.contains("Target host OS"));
+        assert!(prompt.contains("Target host family"));
+        assert!(prompt.contains(host.ping_count_flag()));
+    }
+
+    #[test]
+    fn model_draft_adapts_ping_args_for_host() {
+        let host = HostContext::current();
+        let config = test_provider(&format!(
+            "{{\"kind\":\"draft_workflow\",\"workflow_yaml\":\"name: ping-monitor\\nversion: 1\\nschema_version: 1\\nschedule: false\\nsteps:\\n  - name: ping\\n    type: command\\n    timeout: 30s\\n    run:\\n      command: ping\\n      args: [\\\"{}\\\", \\\"4\\\", \\\"1.1.1.1\\\"]\\n\",\"warnings\":[]}}",
+            host.wrong_ping_count_flag()
+        ));
+        let draft = draft_workflow_with_model("Ping 1.1.1.1", &config).unwrap();
+
+        assert!(draft.workflow_yaml.contains(host.ping_count_flag()));
+        assert!(!draft
+            .workflow_yaml
+            .contains(&format!("\"{}\"", host.wrong_ping_count_flag())));
+        assert!(draft
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("Adjusted ping args")));
+    }
+
+    #[test]
+    fn review_flags_ping_args_for_wrong_host() {
+        let host = HostContext::current();
+        let yaml = format!(
+            "name: ping-monitor\nversion: 1\nschema_version: 1\nschedule: false\nsteps:\n  - name: ping\n    type: command\n    timeout: 30s\n    run:\n      command: ping\n      args: [\"{}\", \"4\", \"1.1.1.1\"]\n",
+            host.wrong_ping_count_flag()
+        );
+        let findings = review_workflow(&yaml);
+
+        assert!(findings
+            .iter()
+            .any(|finding| finding.message.contains("does not match target host OS")));
+    }
+
+    #[test]
+    fn review_filters_spurious_host_ping_metadata_finding() {
+        let host = HostContext::current();
+        let yaml = format!(
+            "name: ping-monitor\nversion: 1\nschema_version: 1\nschedule: false\nsteps:\n  - name: ping\n    type: command\n    timeout: 30s\n    run:\n      command: ping\n      args: [\"{}\", \"4\", \"1.1.1.1\"]\n",
+            host.ping_count_flag()
+        );
+        let config = test_provider(
+            "{\"kind\":\"workflow_review\",\"valid\":true,\"findings\":[{\"severity\":\"warning\",\"path\":\"/steps/0/run\",\"message\":\"The ping command is Windows-specific and needs target metadata.\",\"suggestion\":\"Add target host family metadata.\"}]}",
+        );
+        let findings = review_workflow_with_model(&yaml, &config).unwrap();
+
+        assert!(findings.is_empty());
     }
 
     #[test]
@@ -985,6 +1316,7 @@ mod tests {
         let prompt = review_workflow_prompt("name: demo\nsteps: []\n");
         assert!(prompt.contains("Severity must be one of error, warning, info"));
         assert!(prompt.contains("never suggest automatic execution"));
+        assert!(prompt.contains("command arguments that do not match"));
         assert!(prompt.contains("workflow_review"));
     }
 
@@ -1163,6 +1495,16 @@ mod tests {
     }
 
     #[test]
+    fn decodes_common_windows_oem_log_bytes() {
+        let text = decode_log_bytes(&[
+            b'A', b'c', b'c', 0x8a, b's', b' ', b'r', b'e', b'f', b'u', b's', 0x82, b'.', b' ',
+            b'1', 0xff, b':',
+        ]);
+
+        assert_eq!(text, "Accès refusé. 1\u{00a0}:");
+    }
+
+    #[test]
     fn model_markdown_output_is_rejected() {
         let config = test_provider(
             "```json\n{\"kind\":\"draft_workflow\",\"workflow_yaml\":\"name: x\"}\n```",
@@ -1228,11 +1570,11 @@ mod tests {
         result
     }
 
-    fn test_provider(model_content: &'static str) -> ModelConfig {
+    fn test_provider(model_content: &str) -> ModelConfig {
         test_provider_sequence(vec![model_content])
     }
 
-    fn test_provider_sequence(model_contents: Vec<&'static str>) -> ModelConfig {
+    fn test_provider_sequence(model_contents: Vec<&str>) -> ModelConfig {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let responses = Arc::new(Mutex::new(
