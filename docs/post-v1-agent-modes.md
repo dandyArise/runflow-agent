@@ -20,6 +20,8 @@ V1 restrictions remain the default: no job execution, no cancellation, no rerun,
 
 Goal: periodically inspect local RunFlow state and produce passive summaries.
 
+Detailed design: [watch-design.md](watch-design.md).
+
 Initial scope:
 
 - read `.flow/jobs`, `.flow/runs`, `.flow/agent/drafts`, and `logs/`;
