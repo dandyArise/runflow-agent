@@ -11,7 +11,17 @@ pub fn record(
     changed_files: &[String],
     warnings: &[String],
 ) -> Result<(), String> {
-    let dir = Path::new(".flow").join("agent");
+    record_at(Path::new("."), command, status, changed_files, warnings)
+}
+
+pub(crate) fn record_at(
+    root: &Path,
+    command: &str,
+    status: &str,
+    changed_files: &[String],
+    warnings: &[String],
+) -> Result<(), String> {
+    let dir = root.join(".flow").join("agent");
     fs::create_dir_all(&dir).map_err(|e| format!("cannot create audit directory: {e}"))?;
     let path = dir.join("audit.jsonl");
     let mut file = OpenOptions::new()
@@ -32,7 +42,7 @@ pub fn record(
         .map_err(|e| format!("cannot write audit file: {e}"))
 }
 
-fn timestamp_seconds() -> String {
+pub(crate) fn timestamp_seconds() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())

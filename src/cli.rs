@@ -1,5 +1,6 @@
 use crate::commands;
 
+#[derive(Debug)]
 pub struct CliResult {
     pub command: String,
     pub output: String,
@@ -23,6 +24,7 @@ pub fn run(args: Vec<String>) -> Result<CliResult, String> {
         "inspect-workspace" => commands::inspect_workspace::run(&args[2..]),
         "report" => commands::report::run(&args[2..]),
         "self" => commands::self_update::run(&args[2..]),
+        "watch" => commands::watch::run(&args[2..]),
         other => Err(format!(
             "unknown command '{other}'. Run `runflow-agent --help`."
         )),
@@ -49,6 +51,7 @@ fn help() -> CliResult {
             "  runflow-agent report daily [--from <iso>] [--to <iso>] [--format json]",
             "  runflow-agent self version [--format json]",
             "  runflow-agent self update [--version <tag>] [--install-dir <path>] [--dry-run] [--format json]",
+            "  runflow-agent watch --once [--root <path>] [--format json] [--output <path>]",
             "",
             "Model options:",
             "  --provider mock|ollama|openai-compatible",

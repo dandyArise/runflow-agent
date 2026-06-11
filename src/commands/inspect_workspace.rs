@@ -8,29 +8,30 @@ use crate::json;
 use crate::runflow;
 
 #[derive(Debug)]
-struct WorkspaceInspection {
-    root: PathBuf,
-    jobs: Vec<String>,
-    drafts: Vec<String>,
-    runs: Vec<RunSummary>,
-    health: Vec<HealthIssue>,
-    recommendations: Vec<String>,
+pub(crate) struct WorkspaceInspection {
+    pub(crate) root: PathBuf,
+    pub(crate) jobs: Vec<String>,
+    pub(crate) drafts: Vec<String>,
+    pub(crate) runs: Vec<RunSummary>,
+    pub(crate) health: Vec<HealthIssue>,
+    pub(crate) recommendations: Vec<String>,
 }
 
 #[derive(Debug)]
-struct RunSummary {
-    id: String,
-    job: String,
-    status: String,
-    started_at: String,
-    ended_at: String,
+pub(crate) struct RunSummary {
+    pub(crate) id: String,
+    pub(crate) job: String,
+    pub(crate) status: String,
+    pub(crate) started_at: String,
+    pub(crate) ended_at: String,
+    pub(crate) failed_step: String,
 }
 
 #[derive(Debug)]
-struct HealthIssue {
-    severity: &'static str,
-    path: String,
-    message: String,
+pub(crate) struct HealthIssue {
+    pub(crate) severity: &'static str,
+    pub(crate) path: String,
+    pub(crate) message: String,
 }
 
 pub fn run(args: &[String]) -> Result<CliResult, String> {
@@ -78,7 +79,7 @@ pub fn run(args: &[String]) -> Result<CliResult, String> {
     })
 }
 
-fn inspect(root: &Path, limit: usize) -> Result<WorkspaceInspection, String> {
+pub(crate) fn inspect(root: &Path, limit: usize) -> Result<WorkspaceInspection, String> {
     if !root.is_dir() {
         return Err(format!(
             "workspace root '{}' does not exist",
@@ -429,6 +430,7 @@ fn run_summary(id: &str, manifest: &str) -> RunSummary {
         status: json_string(&parsed, "status").unwrap_or_else(|| "UNKNOWN".to_string()),
         started_at: json_string(&parsed, "started_at").unwrap_or_default(),
         ended_at: json_string(&parsed, "ended_at").unwrap_or_default(),
+        failed_step: json_string(&parsed, "failed_step").unwrap_or_default(),
     }
 }
 
