@@ -1,12 +1,12 @@
 # Autopilot Mode Design
 
-Status: dry-run plan baseline implemented; apply is not approved for runtime.
+Status: dry-run plan implemented; minimal local-draft apply implemented.
 
-`autopilot` is a future permissioned workflow for proposing and, only after explicit human approval, applying limited RunFlow actions. The current runtime only includes `autopilot plan` dry-run proposals. `autopilot apply` is not approved. This document defines the safety contract required before any mutation path starts.
+`autopilot` is a permissioned workflow for proposing and, only after explicit human approval, applying limited local draft actions. The current runtime includes `autopilot plan` dry-run proposals and a minimal `autopilot apply` path that only writes local draft files. Stronger apply actions remain unapproved.
 
 ## Decision
 
-Autopilot mutation remains blocked until all gates in this document are implemented and reviewed. The current implementation produces dry-run proposals only. Any mutation path must come later, behind explicit config, command-line confirmation, per-action allowlists, and audit coverage.
+Autopilot mutation beyond local draft writes remains blocked until all gates in this document are implemented and reviewed. The current implementation produces dry-run proposals and can apply only `write_local_draft` behind explicit confirmation.
 
 ## Goals
 
@@ -36,9 +36,9 @@ Autopilot must build on already bounded modes:
 1. `watch`: observes local state and emits snapshots.
 2. `oncall`: groups incidents and prepares human handoff evidence.
 3. `autopilot plan`: turns evidence into dry-run proposals.
-4. `autopilot apply`: future, approval-gated, mutation-capable path.
+4. `autopilot apply`: approval-gated local draft write.
 
-Step 3 is implemented as a dry-run baseline. Step 4 remains blocked.
+Step 3 is implemented as a dry-run baseline. Step 4 is implemented only for local draft writes.
 
 ## Proposed CLI
 
@@ -51,13 +51,15 @@ runflow-agent autopilot plan --root . --format json
 runflow-agent autopilot plan --root . --output .\.flow\agent\autopilot\proposal.json
 ```
 
-Future mutation path, not approved:
+Current minimal apply path:
 
 ```powershell
-runflow-agent autopilot apply --proposal .\.flow\agent\autopilot\proposal.json --confirm <approval-token>
+runflow-agent autopilot apply --proposal .\.flow\agent\autopilot\proposal.json --proposal-id <id> --confirm <approval-token>
 ```
 
-`apply` must not exist until the permission model, approval flow, rollback design, and tests are complete.
+Detailed design: [autopilot-apply-design.md](autopilot-apply-design.md).
+
+Current `apply` must write only local draft files under `.flow/agent/drafts/`. It must not execute or mutate RunFlow jobs.
 
 ## Inputs
 
@@ -220,13 +222,13 @@ Allowed for first implementation:
 
 ## Implementation Status
 
-- Done: add `autopilot plan` only.
+- Done: add `autopilot plan`.
 - Done: reuse `watch` and `oncall` output contracts as source inputs.
-- Done: generate read-only proposals only.
+- Done: generate local draft proposals only.
 - Done: add JSON and text output.
 - Done: add `--output` and audit writes.
 - Done: add tests for strict JSON, denied actions, empty evidence, invalid source files, and blocked unknown actions.
-- Done: do not add `apply`.
+- Done: add minimal `autopilot apply` for `write_local_draft` only.
 
 ## Tests
 

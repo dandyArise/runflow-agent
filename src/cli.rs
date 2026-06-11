@@ -45,6 +45,7 @@ fn help() -> CliResult {
             "",
             "Usage:",
             "  runflow-agent autopilot plan [--root <path>] [--from-watch <json>] [--from-oncall <json>] [--format json] [--output <path>]",
+            "  runflow-agent autopilot apply --proposal <json> --proposal-id <id> --confirm <token> [--root <path>] [--format json]",
             "  runflow-agent doctor [--root <path>] [--format json]",
             "  runflow-agent draft --prompt <text> [--output <workflow.yml>]",
             "  runflow-agent draft --input <request.txt> [--output <workflow.yml>]",
