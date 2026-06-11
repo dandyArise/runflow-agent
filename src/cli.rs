@@ -45,7 +45,7 @@ fn help() -> CliResult {
             "  runflow-agent draft --input <request.txt> [--output <workflow.yml>]",
             "  runflow-agent review <workflow.yml> [--format json]",
             "  runflow-agent explain-run <run_id> [--format json]",
-            "  runflow-agent inspect-workspace [--root <path>] [--limit <n>] [--format json]",
+            "  runflow-agent inspect-workspace [--root <path>] [--limit <n>] [--health] [--format json]",
             "  runflow-agent report daily [--from <iso>] [--to <iso>] [--format json]",
             "  runflow-agent self version [--format json]",
             "  runflow-agent self update [--version <tag>] [--install-dir <path>] [--dry-run] [--format json]",
