@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.8
+
+- Added `watch --once` and continuous `watch` mode for passive local RunFlow snapshots.
+- Added `oncall` handoff generation for failed and unstable runs.
+- Added `autopilot plan` dry-run proposals while keeping mutation apply paths unavailable.
+- Added detailed post-V1 design docs for watch, oncall, and autopilot safety boundaries.
+
 ## 0.1.7
 
 - Expanded `inspect-workspace --health` coverage for missing directories, invalid drafts, incomplete manifests, failed runs without failed steps, and orphan logs.
