@@ -1,6 +1,6 @@
 # RunFlow Agent MVP Spec
 
-Status: external project draft
+Status: V1 MVP implemented
 Target repository: `runflow-agent`
 RunFlow core status: frozen; no LLM or Agent CLI lives in this repository.
 Scope: Agent v1 assist-only, implemented outside `runflow`
@@ -429,11 +429,13 @@ V1 is done when:
 - `runflow-agent review` reports schema errors and risk findings without editing files;
 - `runflow-agent explain-run` explains a failed run from local logs/events;
 - `runflow-agent report daily` produces text and JSON summaries;
+- `runflow-agent inspect-workspace` inventories local jobs, drafts, runs, and workspace health;
+- `runflow-agent doctor` checks provider, workspace integrity, audit wiring, and deny-by-default permissions;
 - all model outputs are JSON-schema validated;
 - generated workflows are validated by the existing workflow schema;
 - no agent command runs jobs, cancels runs, sends alerts, or calls external APIs;
 - errors are returned cleanly;
-- tests cover success, invalid model output, invalid workflow YAML, missing run, and provider unavailable.
+- tests cover success, invalid model output, invalid workflow YAML, missing run, provider unavailable, workspace health, and release smoke paths.
 
 ## Implementation Plan
 

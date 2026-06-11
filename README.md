@@ -73,10 +73,21 @@ See [docs/demo.md](docs/demo.md).
 
 ## Usage
 
+V1 command set:
+
+- `doctor`: local/provider health checks.
+- `inspect-workspace`: local workspace inventory and optional health checks.
+- `draft`: generate a workflow draft without registering or running it.
+- `review`: validate and review workflow YAML without editing it.
+- `explain-run`: explain one local run from local evidence.
+- `report daily`: summarize local run history.
+- `self`: inspect or update the installed binary.
+
 ```powershell
 runflow-agent doctor
 runflow-agent doctor --provider openai-compatible --base-url http://localhost:1234/v1 --model qwen/qwen3-coder-30b --timeout-seconds 120
 runflow-agent inspect-workspace
+runflow-agent inspect-workspace --health
 runflow-agent inspect-workspace --format json
 runflow-agent draft --prompt "Ping 1.1.1.1 every 5 minutes"
 runflow-agent draft --prompt "Backup logs" --output .\.flow\agent\drafts\backup-logs.yml
@@ -101,4 +112,4 @@ V1 is deny-by-default:
 
 ## Status
 
-This repository currently contains a local MVP with `mock`, `ollama`, and `openai-compatible` providers. Model outputs are decoded as strict JSON and rejected when the expected `kind` or required fields are missing. Generated workflow YAML is validated against the embedded RunFlow workflow schema. Local jobs, drafts, and run history can be inspected without calling an LLM.
+This repository contains the V1 assist-only MVP with `mock`, `ollama`, and `openai-compatible` providers. Model outputs are decoded as strict JSON and rejected when the expected `kind` or required fields are missing. Generated workflow YAML is validated against the embedded RunFlow workflow schema. Local jobs, drafts, run history, workspace health, audit wiring, install scripts, and Windows release assets have smoke coverage.

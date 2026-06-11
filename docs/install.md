@@ -90,3 +90,17 @@ Release assets also include:
 
 - `install.ps1`
 - `install.sh`
+
+## Release Smoke Test
+
+Windows release archives can be checked locally:
+
+```powershell
+.\scripts\test-release-smoke.ps1 -ArchivePath .\dist\runflow-agent-v0.1.5-windows-x64.zip -ExpectedVersion 0.1.5
+```
+
+Published Windows installs can also be checked without changing PATH:
+
+```powershell
+.\scripts\test-release-smoke.ps1 -InstallFromReleaseVersion v0.1.5
+```

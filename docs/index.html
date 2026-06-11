@@ -936,6 +936,7 @@ footer p { font-size: .77rem; color: var(--text-dim); }
       <div class="cmd-list">
         <div class="cmd-row"><span class="cmd-name">runflow-agent inspect-workspace</span><span class="cmd-desc" data-fr="Inventorie jobs, drafts agent et runs récents depuis .flow/" data-en="Inventory jobs, agent drafts, and recent runs from .flow/">Inventorie jobs, drafts agent et runs récents depuis .flow/</span><span class="cmd-eg">runflow-agent inspect-workspace</span></div>
         <div class="cmd-row"><span class="cmd-name">--limit</span><span class="cmd-desc" data-fr="Limite le nombre de runs récents affichés" data-en="Limit the number of recent runs shown">Limite le nombre de runs récents affichés</span><span class="cmd-eg">runflow-agent inspect-workspace --limit 5</span></div>
+        <div class="cmd-row"><span class="cmd-name">--health</span><span class="cmd-desc" data-fr="Signale jobs invalides, manifests manquants, logs incomplets et drafts orphelins" data-en="Report invalid jobs, missing manifests, incomplete logs, and orphan drafts">Signale jobs invalides, manifests manquants, logs incomplets et drafts orphelins</span><span class="cmd-eg">runflow-agent inspect-workspace --health</span></div>
         <div class="cmd-row"><span class="cmd-name">--format json</span><span class="cmd-desc" data-fr="Retourne l'inventaire structuré pour scripts et UI" data-en="Return the structured inventory for scripts and UI">Retourne l'inventaire structuré pour scripts et UI</span><span class="cmd-eg">runflow-agent inspect-workspace --format json</span></div>
       </div>
     </div>
@@ -1027,6 +1028,7 @@ footer p { font-size: .77rem; color: var(--text-dim); }
     <div style="height:14px"></div>
 
     <div class="code-block"><code>runflow-agent inspect-workspace</code><button class="copy-btn" onclick="copyCode(this,'runflow-agent inspect-workspace')">COPY</button></div>
+    <div class="code-block"><code>runflow-agent inspect-workspace --health</code><button class="copy-btn" onclick="copyCode(this,'runflow-agent inspect-workspace --health')">COPY</button></div>
     <div class="code-block"><code>runflow-agent inspect-workspace --format json</code><button class="copy-btn" onclick="copyCode(this,'runflow-agent inspect-workspace --format json')">COPY</button></div>
     <p style="margin-top:.8rem;font-size:.78rem;color:var(--text-dim)" data-fr="L'inventaire reste local : jobs dans .flow/jobs, drafts dans .flow/agent/drafts et runs récents dans .flow/runs." data-en="The inventory stays local: jobs in .flow/jobs, drafts in .flow/agent/drafts, and recent runs in .flow/runs.">L'inventaire reste local : <code style="color:var(--green)">.flow/jobs</code>, <code style="color:var(--green)">.flow/agent/drafts</code> et <code style="color:var(--green)">.flow/runs</code>.</p>
 
@@ -1061,6 +1063,7 @@ footer p { font-size: .77rem; color: var(--text-dim); }
       <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="YAML et sorties JSON validés" data-en="YAML and JSON outputs validated">YAML et sorties JSON validés</span></div>
       <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="Policy deny-by-default" data-en="Deny-by-default policy">Policy deny-by-default</span></div>
       <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="Audit local dans .flow/agent/audit.jsonl" data-en="Local audit in .flow/agent/audit.jsonl">Audit local dans .flow/agent/audit.jsonl</span></div>
+      <div class="status-item"><span class="si-dot ok"></span><span class="si-text ok" data-fr="Smoke tests install et release Windows" data-en="Windows install and release smoke tests">Smoke tests install et release Windows</span></div>
     </div>
     <div class="status-card">
       <h4 data-fr="🔧 Hors v1" data-en="🔧 Out of v1">🔧 Hors v1</h4>
