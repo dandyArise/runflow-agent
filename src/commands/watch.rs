@@ -1,5 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
 
 use crate::audit;
 use crate::cli::CliResult;
@@ -7,41 +9,115 @@ use crate::commands::inspect_workspace::{self, HealthIssue, WorkspaceInspection}
 use crate::json;
 
 const DEFAULT_LIMIT: usize = 10;
+const DEFAULT_INTERVAL_SECONDS: u64 = 60;
 
 pub fn run(args: &[String]) -> Result<CliResult, String> {
-    let root = value_after(args, "--root")
-        .map(PathBuf::from)
-        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot read current dir: {e}"))?);
-    let limit = value_after(args, "--limit")
-        .map(str::parse::<usize>)
-        .transpose()
-        .map_err(|_| "--limit must be an integer".to_string())?
-        .unwrap_or(DEFAULT_LIMIT);
-    if let Some(interval) = value_after(args, "--interval-seconds") {
-        let interval = interval
-            .parse::<u64>()
-            .map_err(|_| "--interval-seconds must be a positive integer".to_string())?;
-        if interval == 0 {
-            return Err("--interval-seconds must be greater than zero".to_string());
-        }
-    }
-    if !args.iter().any(|arg| arg == "--once") {
-        return Err(
-            "watch currently supports --once only; continuous mode is not implemented".to_string(),
-        );
+    let options = WatchOptions::from_args(args)?;
+    if options.once {
+        return run_once(&options);
     }
 
-    let inspection = inspect_workspace::inspect(&root, limit)?;
-    let format_json = wants_json(args);
+    run_continuous(&options, None, thread::sleep)
+}
+
+struct WatchOptions {
+    root: PathBuf,
+    limit: usize,
+    format_json: bool,
+    output: Option<PathBuf>,
+    once: bool,
+    interval: Duration,
+}
+
+impl WatchOptions {
+    fn from_args(args: &[String]) -> Result<Self, String> {
+        let root = value_after(args, "--root").map(PathBuf::from).unwrap_or(
+            std::env::current_dir().map_err(|e| format!("cannot read current dir: {e}"))?,
+        );
+        let limit = value_after(args, "--limit")
+            .map(str::parse::<usize>)
+            .transpose()
+            .map_err(|_| "--limit must be an integer".to_string())?
+            .unwrap_or(DEFAULT_LIMIT);
+        let interval_seconds = value_after(args, "--interval-seconds")
+            .map(str::parse::<u64>)
+            .transpose()
+            .map_err(|_| "--interval-seconds must be a positive integer".to_string())?
+            .unwrap_or(DEFAULT_INTERVAL_SECONDS);
+        if interval_seconds == 0 {
+            return Err("--interval-seconds must be greater than zero".to_string());
+        }
+
+        Ok(Self {
+            root,
+            limit,
+            format_json: wants_json(args),
+            output: value_after(args, "--output").map(PathBuf::from),
+            once: args.iter().any(|arg| arg == "--once"),
+            interval: Duration::from_secs(interval_seconds),
+        })
+    }
+}
+
+fn run_once(options: &WatchOptions) -> Result<CliResult, String> {
+    let emission = emit_snapshot(options)?;
+
+    Ok(CliResult {
+        command: "watch".to_string(),
+        output: emission.output,
+        status: "success",
+        changed_files: emission.changed_files,
+        warnings: emission.warnings,
+        audit: false,
+    })
+}
+
+fn run_continuous<F>(
+    options: &WatchOptions,
+    max_iterations: Option<usize>,
+    mut sleep: F,
+) -> Result<CliResult, String>
+where
+    F: FnMut(Duration),
+{
+    let mut iterations = 0;
+    loop {
+        let emission = emit_snapshot(options)?;
+        if options.output.is_none() {
+            println!("{}", emission.output);
+        }
+        iterations += 1;
+        if max_iterations.is_some_and(|max| iterations >= max) {
+            return Ok(CliResult {
+                command: "watch".to_string(),
+                output: String::new(),
+                status: "success",
+                changed_files: emission.changed_files,
+                warnings: emission.warnings,
+                audit: false,
+            });
+        }
+        sleep(options.interval);
+    }
+}
+
+struct WatchEmission {
+    output: String,
+    changed_files: Vec<String>,
+    warnings: Vec<String>,
+}
+
+fn emit_snapshot(options: &WatchOptions) -> Result<WatchEmission, String> {
+    let inspection = inspect_workspace::inspect(&options.root, options.limit)?;
     let snapshot = WatchSnapshot::from_inspection(&inspection);
-    let output = if format_json {
+    let output = if options.format_json {
         snapshot.json()
     } else {
         snapshot.text()
     };
 
     let mut changed_files = Vec::new();
-    if let Some(path) = value_after(args, "--output").map(PathBuf::from) {
+    if let Some(path) = &options.output {
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -50,7 +126,7 @@ pub fn run(args: &[String]) -> Result<CliResult, String> {
                 format!("cannot create output directory '{}': {e}", parent.display())
             })?;
         }
-        fs::write(&path, &output)
+        fs::write(path, &output)
             .map_err(|e| format!("cannot write watch output '{}': {e}", path.display()))?;
         changed_files.push(path.display().to_string());
     }
@@ -67,15 +143,12 @@ pub fn run(args: &[String]) -> Result<CliResult, String> {
                 .map(|issue| format!("{}: {}", issue.path, issue.message)),
         )
         .collect::<Vec<_>>();
-    let _ = audit::record_at(&root, "watch", "success", &changed_files, &warnings);
+    let _ = audit::record_at(&options.root, "watch", "success", &changed_files, &warnings);
 
-    Ok(CliResult {
-        command: "watch".to_string(),
+    Ok(WatchEmission {
         output,
-        status: "success",
         changed_files,
         warnings,
-        audit: false,
     })
 }
 
@@ -378,9 +451,31 @@ mod tests {
     }
 
     #[test]
-    fn continuous_mode_is_not_implemented_yet() {
-        let err = run(&["--interval-seconds".to_string(), "60".to_string()]).unwrap_err();
-        assert!(err.contains("--once only"));
+    fn continuous_mode_can_run_bounded_iterations() {
+        let root = unique_temp_dir("watch-continuous");
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("latest.json");
+        let options = WatchOptions::from_args(&[
+            "--root".to_string(),
+            root.to_string_lossy().to_string(),
+            "--interval-seconds".to_string(),
+            "1".to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+            "--output".to_string(),
+            output.to_string_lossy().to_string(),
+        ])
+        .unwrap();
+
+        let result = run_continuous(&options, Some(2), |_| {}).unwrap();
+
+        let audit =
+            fs::read_to_string(root.join(".flow").join("agent").join("audit.jsonl")).unwrap();
+        assert!(output.is_file());
+        assert_eq!(audit.lines().count(), 2);
+        assert!(result.output.is_empty());
+        assert_eq!(result.changed_files, vec![output.display().to_string()]);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

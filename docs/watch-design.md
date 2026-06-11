@@ -1,6 +1,6 @@
 # Watch Mode Design
 
-Status: design-only, post-V1.
+Status: implemented post-V1 baseline.
 
 `watch` is a passive local monitoring mode. It repeatedly inspects RunFlow state and writes or prints summaries for a human. It does not run jobs, cancel runs, rerun steps, execute shell commands, send notifications, call webhooks, or call external APIs by default.
 
@@ -33,7 +33,7 @@ runflow-agent watch --root . --once --format json
 runflow-agent watch --root . --output .\.flow\agent\watch\latest.json
 ```
 
-Initial implementation should ship `--once` first. Continuous polling should come after the output contract and audit behavior are stable.
+Current implementation supports `--once` and continuous polling. State-based deduplication remains out of scope until it is needed.
 
 ## Inputs
 
@@ -154,14 +154,14 @@ Allowed:
 - explicit `--output` writes under user-selected paths;
 - audit writes under `.flow/agent/audit.jsonl`.
 
-## Implementation Plan
+## Implementation Status
 
-1. Add shared snapshot builder around existing `inspect-workspace` and `report daily` logic.
-2. Add `watch --once` with text and JSON output.
-3. Add output schema tests.
-4. Add audit tests.
-5. Add continuous polling with interval validation.
-6. Add state cache only if deduplication is needed.
+- Done: shared snapshot builder around existing `inspect-workspace` logic.
+- Done: `watch --once` with text and JSON output.
+- Done: explicit `--output` write path.
+- Done: audit writes for each snapshot.
+- Done: continuous polling with interval validation.
+- Later: state cache only if deduplication is needed.
 
 ## Tests
 
@@ -173,6 +173,7 @@ Required tests:
 - `--format json` returns strict JSON;
 - `--output` writes only the requested file;
 - continuous interval rejects zero or invalid values;
+- continuous mode can run bounded iterations in tests;
 - denied action language never appears in recommendations.
 
 ## Open Decisions

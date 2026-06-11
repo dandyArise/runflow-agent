@@ -51,6 +51,7 @@ fn help() -> CliResult {
             "  runflow-agent report daily [--from <iso>] [--to <iso>] [--format json]",
             "  runflow-agent self version [--format json]",
             "  runflow-agent self update [--version <tag>] [--install-dir <path>] [--dry-run] [--format json]",
+            "  runflow-agent watch [--root <path>] [--interval-seconds <n>] [--format json] [--output <path>]",
             "  runflow-agent watch --once [--root <path>] [--format json] [--output <path>]",
             "",
             "Model options:",
