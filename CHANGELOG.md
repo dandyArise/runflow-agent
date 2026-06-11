@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.7
+
+- Expanded `inspect-workspace --health` coverage for missing directories, invalid drafts, incomplete manifests, failed runs without failed steps, and orphan logs.
+- Added `docs/v1-roadmap.md` for V1 completion status and post-V1 boundaries.
+- Added `docs/post-v1-agent-modes.md` to open the watch, oncall, and autopilot design track without runtime behavior.
+
 ## 0.1.6
 
 - Added `inspect-workspace --health` for local workspace integrity checks.

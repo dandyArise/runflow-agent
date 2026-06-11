@@ -96,11 +96,11 @@ Release assets also include:
 Windows release archives can be checked locally:
 
 ```powershell
-.\scripts\test-release-smoke.ps1 -ArchivePath .\dist\runflow-agent-v0.1.6-windows-x64.zip -ExpectedVersion 0.1.6
+.\scripts\test-release-smoke.ps1 -ArchivePath .\dist\runflow-agent-v0.1.7-windows-x64.zip -ExpectedVersion 0.1.7
 ```
 
 Published Windows installs can also be checked without changing PATH:
 
 ```powershell
-.\scripts\test-release-smoke.ps1 -InstallFromReleaseVersion v0.1.6
+.\scripts\test-release-smoke.ps1 -InstallFromReleaseVersion v0.1.7
 ```
