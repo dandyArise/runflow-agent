@@ -1,5 +1,7 @@
 # RunFlow Agent
 
+[![CI](https://github.com/dandyArise/runflow-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/dandyArise/runflow-agent/actions/workflows/ci.yml)
+
 Assist-only external agent for [RunFlow](https://github.com/dandyArise/runflow).
 
 RunFlow Agent reads local RunFlow data, produces validated suggestions, and leaves execution under user control. It does not run jobs, cancel runs, rerun steps, send alerts, manage secrets, call external APIs, or execute shell commands.

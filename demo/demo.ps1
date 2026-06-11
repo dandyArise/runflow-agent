@@ -45,16 +45,20 @@ try {
     New-Item -ItemType Directory -Force -Path ".flow\runs\demo-failed-run" | Out-Null
     New-Item -ItemType Directory -Force -Path ".flow\agent\drafts" | Out-Null
     New-Item -ItemType Directory -Force -Path "logs\demo-failed-run\build" | Out-Null
-    $draftPath = ".flow\agent\drafts\ping-workflow.yml"
+    $draftPath = ".flow\agent\drafts\ping.yml"
 
     Write-Utf8NoBom ".flow\jobs\ping.yml" @'
 name: ping
 version: 1
+schema_version: 1
+schedule: false
 steps:
-  - id: ping
-    type: shell
-    command: ping
-    args: ["1.1.1.1"]
+  - name: ping
+    type: command
+    timeout: 30s
+    run:
+      command: ping
+      args: ["1.1.1.1"]
 '@
 
     Write-Utf8NoBom ".flow\runs\demo-failed-run\manifest.json" @'
@@ -90,8 +94,8 @@ steps:
     Write-Host ""
 
     Write-Host "== Inspect workspace =="
-    $inspectOutput = & $Binary inspect-workspace
-    $inspectJson = & $Binary inspect-workspace --format json
+    $inspectOutput = & $Binary inspect-workspace --health
+    $inspectJson = & $Binary inspect-workspace --health --format json
     $inspectOutput | Write-Host
     Write-Host ""
 

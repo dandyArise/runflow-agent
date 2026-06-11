@@ -24,9 +24,9 @@ The demo keeps its temporary files and prints the workspace path at the end so t
 
 ## Expected Flow
 
-1. A workflow draft is generated from `Ping 1.1.1.1 every 5 minutes` into `.flow/agent/drafts/ping-workflow.yml`.
+1. A workflow draft is generated from `Ping 1.1.1.1 every 5 minutes` into `.flow/agent/drafts/ping.yml`.
 2. The generated workflow is reviewed against the embedded RunFlow schema from that centralized draft path.
-3. The local workspace inventory is printed from `.flow/jobs`, `.flow/agent/drafts`, and `.flow/runs`.
+3. The local workspace inventory and health checks are printed from `.flow/jobs`, `.flow/agent/drafts`, and `.flow/runs`.
 4. A simulated failed run is explained from:
    - `.flow/runs/demo-failed-run/manifest.json`
    - `.flow/runs/demo-failed-run/events.jsonl`
@@ -41,9 +41,9 @@ The failed run intentionally contains `command not found: cargo-nextest`, so `ex
 
 The demo writes:
 
-- `.flow/agent/drafts/ping-workflow.yml`: generated workflow draft.
+- `.flow/agent/drafts/ping.yml`: generated workflow draft.
 - `demo-result.txt`: readable combined output.
 - `demo-review.json`: structured review output.
-- `demo-inspect.json`: structured workspace inventory.
+- `demo-inspect.json`: structured workspace inventory and health checks.
 - `demo-explain.json`: structured run explanation.
 - `demo-report.json`: structured daily report.

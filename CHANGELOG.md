@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+## 0.1.6
+
 - Added `inspect-workspace --health` for local workspace integrity checks.
 - Improved `doctor` with workspace integrity, audit, and deny-by-default permission checks.
 - Added Windows release archive and install smoke tests.
+- Added V1 status docs, release docs, and CI badge.
 
 ## 0.1.5
 
