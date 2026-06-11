@@ -104,7 +104,7 @@ pub(crate) fn http_post_json(
         "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nAccept: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
         parsed.path,
         parsed.host,
-        body.as_bytes().len()
+        body.len()
     );
     for (name, value) in headers {
         request.push_str(name);

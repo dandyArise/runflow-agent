@@ -11,6 +11,7 @@ RunFlow Agent reads local RunFlow data, produces validated suggestions, and leav
 - `runflow-agent explain-run`: explain a run from `.flow/runs/<run_id>`, `logs/<run_id>`, events, metadata, stdout/stderr excerpts, and likely cause hints.
 - `runflow-agent report daily`: summarize local RunFlow run activity for a time window.
 - `runflow-agent doctor`: check the selected LLM provider and local RunFlow Agent workspace wiring.
+- `runflow-agent inspect-workspace`: inventory local RunFlow jobs, agent drafts, recent runs, and recommended manual follow-ups.
 - `runflow-agent self version` / `self update`: inspect and update the installed binary from GitHub releases.
 - Local audit trail in `.flow/agent/audit.jsonl`.
 - Output contract files under `schemas/`.
@@ -75,6 +76,8 @@ See [docs/demo.md](docs/demo.md).
 ```powershell
 runflow-agent doctor
 runflow-agent doctor --provider openai-compatible --base-url http://localhost:1234/v1 --model qwen/qwen3-coder-30b --timeout-seconds 120
+runflow-agent inspect-workspace
+runflow-agent inspect-workspace --format json
 runflow-agent draft --prompt "Ping 1.1.1.1 every 5 minutes"
 runflow-agent draft --prompt "Backup logs" --output .\.flow\agent\drafts\backup-logs.yml
 runflow-agent review .\.flow\agent\drafts\backup-logs.yml
@@ -98,4 +101,4 @@ V1 is deny-by-default:
 
 ## Status
 
-This repository currently contains a local MVP with `mock`, `ollama`, and `openai-compatible` providers. Model outputs are decoded as strict JSON and rejected when the expected `kind` or required fields are missing. Generated workflow YAML is validated against the embedded RunFlow workflow schema.
+This repository currently contains a local MVP with `mock`, `ollama`, and `openai-compatible` providers. Model outputs are decoded as strict JSON and rejected when the expected `kind` or required fields are missing. Generated workflow YAML is validated against the embedded RunFlow workflow schema. Local jobs, drafts, and run history can be inspected without calling an LLM.

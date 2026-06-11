@@ -78,16 +78,16 @@ fn update(args: &[String]) -> Result<CliResult, String> {
     let url = asset_url(&version, &asset);
 
     if dry_run {
-        return Ok(update_result(
-            &version,
-            &asset,
-            &url,
-            &install_dir,
-            &target,
-            "dry-run",
+        return Ok(update_result(UpdateResult {
+            version: &version,
+            asset: &asset,
+            url: &url,
+            install_dir: &install_dir,
+            target: &target,
+            status: "dry-run",
             format_json,
-            false,
-        ));
+            changed: false,
+        }));
     }
 
     let work_dir = std::env::temp_dir().join(format!(
@@ -117,46 +117,48 @@ fn update(args: &[String]) -> Result<CliResult, String> {
         .map_err(|e| format!("cannot create install dir '{}': {e}", install_dir.display()))?;
     let staged = install_binary(&source, &target)?;
     let status = if staged { "staged" } else { "updated" };
-    Ok(update_result(
-        &version,
-        &asset,
-        &url,
-        &install_dir,
-        &target,
+    Ok(update_result(UpdateResult {
+        version: &version,
+        asset: &asset,
+        url: &url,
+        install_dir: &install_dir,
+        target: &target,
         status,
         format_json,
-        true,
-    ))
+        changed: true,
+    }))
 }
 
-fn update_result(
-    version: &str,
-    asset: &PlatformAsset,
-    url: &str,
-    install_dir: &Path,
-    target: &Path,
+struct UpdateResult<'a> {
+    version: &'a str,
+    asset: &'a PlatformAsset,
+    url: &'a str,
+    install_dir: &'a Path,
+    target: &'a Path,
     status: &'static str,
     format_json: bool,
     changed: bool,
-) -> CliResult {
-    let output = if format_json {
+}
+
+fn update_result(result: UpdateResult<'_>) -> CliResult {
+    let output = if result.format_json {
         format!(
             "{{\"kind\":\"self_update\",\"status\":\"{}\",\"version\":\"{}\",\"platform\":\"{}\",\"url\":\"{}\",\"install_dir\":\"{}\",\"binary\":\"{}\"}}",
-            json::escape(status),
-            json::escape(version),
-            json::escape(asset.platform),
-            json::escape(url),
-            json::escape(&install_dir.display().to_string()),
-            json::escape(&target.display().to_string())
+            json::escape(result.status),
+            json::escape(result.version),
+            json::escape(result.asset.platform),
+            json::escape(result.url),
+            json::escape(&result.install_dir.display().to_string()),
+            json::escape(&result.target.display().to_string())
         )
     } else {
         [
-            format!("status: {status}"),
-            format!("version: {version}"),
-            format!("platform: {}", asset.platform),
-            format!("url: {url}"),
-            format!("install_dir: {}", install_dir.display()),
-            format!("binary: {}", target.display()),
+            format!("status: {}", result.status),
+            format!("version: {}", result.version),
+            format!("platform: {}", result.asset.platform),
+            format!("url: {}", result.url),
+            format!("install_dir: {}", result.install_dir.display()),
+            format!("binary: {}", result.target.display()),
         ]
         .join("\n")
     };
@@ -165,8 +167,8 @@ fn update_result(
         command: "self update".to_string(),
         output,
         status: "success",
-        changed_files: if changed {
-            vec![target.display().to_string()]
+        changed_files: if result.changed {
+            vec![result.target.display().to_string()]
         } else {
             Vec::new()
         },

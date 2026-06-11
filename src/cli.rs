@@ -20,6 +20,7 @@ pub fn run(args: Vec<String>) -> Result<CliResult, String> {
         "draft" => commands::draft::run(&args[2..]),
         "review" => commands::review::run(&args[2..]),
         "explain-run" => commands::explain_run::run(&args[2..]),
+        "inspect-workspace" => commands::inspect_workspace::run(&args[2..]),
         "report" => commands::report::run(&args[2..]),
         "self" => commands::self_update::run(&args[2..]),
         other => Err(format!(
@@ -44,6 +45,7 @@ fn help() -> CliResult {
             "  runflow-agent draft --input <request.txt> [--output <workflow.yml>]",
             "  runflow-agent review <workflow.yml> [--format json]",
             "  runflow-agent explain-run <run_id> [--format json]",
+            "  runflow-agent inspect-workspace [--root <path>] [--limit <n>] [--format json]",
             "  runflow-agent report daily [--from <iso>] [--to <iso>] [--format json]",
             "  runflow-agent self version [--format json]",
             "  runflow-agent self update [--version <tag>] [--install-dir <path>] [--dry-run] [--format json]",
