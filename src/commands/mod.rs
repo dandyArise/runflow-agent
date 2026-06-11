@@ -1,3 +1,4 @@
+pub mod autopilot;
 pub mod doctor;
 pub mod draft;
 pub mod explain_run;

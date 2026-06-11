@@ -1,12 +1,12 @@
 # Autopilot Mode Design
 
-Status: design-only, not approved for runtime.
+Status: dry-run plan baseline implemented; apply is not approved for runtime.
 
-`autopilot` is a future permissioned workflow for proposing and, only after explicit human approval, applying limited RunFlow actions. It is not part of the current runtime. This document defines the safety contract that must exist before any implementation starts.
+`autopilot` is a future permissioned workflow for proposing and, only after explicit human approval, applying limited RunFlow actions. The current runtime only includes `autopilot plan` dry-run proposals. `autopilot apply` is not approved. This document defines the safety contract required before any mutation path starts.
 
 ## Decision
 
-Autopilot remains blocked until all gates in this document are implemented and reviewed. The first implementation must produce dry-run proposals only. Any mutation path must come later, behind explicit config, command-line confirmation, per-action allowlists, and audit coverage.
+Autopilot mutation remains blocked until all gates in this document are implemented and reviewed. The current implementation produces dry-run proposals only. Any mutation path must come later, behind explicit config, command-line confirmation, per-action allowlists, and audit coverage.
 
 ## Goals
 
@@ -38,11 +38,11 @@ Autopilot must build on already bounded modes:
 3. `autopilot plan`: turns evidence into dry-run proposals.
 4. `autopilot apply`: future, approval-gated, mutation-capable path.
 
-Only step 3 is eligible for the first runtime implementation.
+Step 3 is implemented as a dry-run baseline. Step 4 remains blocked.
 
 ## Proposed CLI
 
-Design target only:
+Implemented dry-run baseline:
 
 ```powershell
 runflow-agent autopilot plan --root . --from-watch .\.flow\agent\watch\latest.json
@@ -218,15 +218,15 @@ Allowed for first implementation:
 - Unknown actions should be blocked, not downgraded.
 - Proposal files should be stable and deterministic enough for review.
 
-## Implementation Plan
+## Implementation Status
 
-1. Add `autopilot plan` only.
-2. Reuse `watch` and `oncall` output contracts as source inputs.
-3. Generate read-only proposals only.
-4. Add JSON and text output.
-5. Add `--output` and audit writes.
-6. Add tests for strict JSON, denied actions, empty evidence, invalid source files, and blocked unknown actions.
-7. Do not add `apply`.
+- Done: add `autopilot plan` only.
+- Done: reuse `watch` and `oncall` output contracts as source inputs.
+- Done: generate read-only proposals only.
+- Done: add JSON and text output.
+- Done: add `--output` and audit writes.
+- Done: add tests for strict JSON, denied actions, empty evidence, invalid source files, and blocked unknown actions.
+- Done: do not add `apply`.
 
 ## Tests
 
