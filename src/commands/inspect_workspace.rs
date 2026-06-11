@@ -211,6 +211,32 @@ fn workspace_health(
 ) -> Result<Vec<HealthIssue>, String> {
     let mut issues = Vec::new();
     let jobs_dir = root.join(".flow").join("jobs");
+    let drafts_dir = root.join(".flow").join("agent").join("drafts");
+    let runs_dir = root.join(".flow").join("runs");
+    let logs_dir = root.join("logs");
+
+    for (path, label) in [
+        (&jobs_dir, ".flow/jobs"),
+        (&drafts_dir, ".flow/agent/drafts"),
+        (&runs_dir, ".flow/runs"),
+    ] {
+        if !path.is_dir() {
+            issues.push(HealthIssue {
+                severity: "warn",
+                path: path.display().to_string(),
+                message: format!("{label} directory is missing"),
+            });
+        }
+    }
+
+    if !runs.is_empty() && !logs_dir.is_dir() {
+        issues.push(HealthIssue {
+            severity: "warn",
+            path: logs_dir.display().to_string(),
+            message: "logs directory is missing while runs exist".to_string(),
+        });
+    }
+
     for path in list_yaml_file_paths(&jobs_dir)? {
         let yaml = fs::read_to_string(&path)
             .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
@@ -227,8 +253,20 @@ fn workspace_health(
         }
     }
 
-    let drafts_dir = root.join(".flow").join("agent").join("drafts");
     for path in list_yaml_file_paths(&drafts_dir)? {
+        let yaml = fs::read_to_string(&path)
+            .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
+        let validation = runflow::validate_workflow(&yaml);
+        if !validation.valid {
+            issues.push(HealthIssue {
+                severity: "warn",
+                path: path.display().to_string(),
+                message: format!(
+                    "draft workflow is invalid: {}",
+                    validation.messages.join("; ")
+                ),
+            });
+        }
         let stem = path
             .file_stem()
             .and_then(|stem| stem.to_str())
@@ -242,8 +280,6 @@ fn workspace_health(
         }
     }
 
-    let runs_dir = root.join(".flow").join("runs");
-    let logs_dir = root.join("logs");
     if runs_dir.exists() {
         for entry in fs::read_dir(&runs_dir)
             .map_err(|e| format!("cannot read '{}': {e}", runs_dir.display()))?
@@ -294,6 +330,24 @@ fn workspace_health(
                 }
             }
 
+            let status = json_string(&parsed, "status");
+            if status.is_none() {
+                issues.push(HealthIssue {
+                    severity: "warn",
+                    path: manifest_path.display().to_string(),
+                    message: "run manifest has no status".to_string(),
+                });
+            }
+            if matches!(status.as_deref(), Some("FAILED" | "ERROR"))
+                && json_string(&parsed, "failed_step").is_none()
+            {
+                issues.push(HealthIssue {
+                    severity: "warn",
+                    path: manifest_path.display().to_string(),
+                    message: "failed run manifest has no failed_step".to_string(),
+                });
+            }
+
             let run_logs = logs_dir.join(&run_id);
             if !run_logs.is_dir() {
                 issues.push(HealthIssue {
@@ -312,6 +366,26 @@ fn workspace_health(
                     severity: "warn",
                     path: run_logs.display().to_string(),
                     message: "failed run has no stdout/stderr log".to_string(),
+                });
+            }
+        }
+    }
+
+    if logs_dir.exists() {
+        for entry in fs::read_dir(&logs_dir)
+            .map_err(|e| format!("cannot read '{}': {e}", logs_dir.display()))?
+        {
+            let entry = entry.map_err(|e| format!("cannot read '{}': {e}", logs_dir.display()))?;
+            let log_dir = entry.path();
+            if !log_dir.is_dir() {
+                continue;
+            }
+            let log_id = entry.file_name().to_string_lossy().to_string();
+            if !runs.iter().any(|run| run.id == log_id) {
+                issues.push(HealthIssue {
+                    severity: "warn",
+                    path: log_dir.display().to_string(),
+                    message: "logs directory has no matching run".to_string(),
                 });
             }
         }
@@ -543,15 +617,23 @@ mod tests {
         let jobs = root.join(".flow").join("jobs");
         let drafts = root.join(".flow").join("agent").join("drafts");
         let runs = root.join(".flow").join("runs");
+        let logs = root.join("logs");
         fs::create_dir_all(&jobs).unwrap();
         fs::create_dir_all(&drafts).unwrap();
+        fs::create_dir_all(logs.join("orphan-log")).unwrap();
         fs::create_dir_all(runs.join("missing-manifest")).unwrap();
         fs::create_dir_all(runs.join("unknown-job")).unwrap();
+        fs::create_dir_all(runs.join("no-status")).unwrap();
         fs::write(jobs.join("broken.yml"), "name: Bad Name\nsteps: []\n").unwrap();
-        fs::write(drafts.join("orphan.yml"), "name: orphan\n").unwrap();
+        fs::write(drafts.join("orphan.yml"), "name: Bad Draft\nsteps: []\n").unwrap();
         fs::write(
             runs.join("unknown-job").join("manifest.json"),
             "{\"job_name\":\"ghost\",\"status\":\"FAILED\"}",
+        )
+        .unwrap();
+        fs::write(
+            runs.join("no-status").join("manifest.json"),
+            "{\"job_name\":\"broken\"}",
         )
         .unwrap();
 
@@ -572,7 +654,13 @@ mod tests {
         assert!(result
             .output
             .contains("draft has no matching registered job name"));
+        assert!(result.output.contains("draft workflow is invalid"));
         assert!(result.output.contains("run references unknown job"));
+        assert!(result.output.contains("run manifest has no status"));
+        assert!(result
+            .output
+            .contains("failed run manifest has no failed_step"));
+        assert!(result.output.contains("logs directory has no matching run"));
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
