@@ -57,6 +57,13 @@ jobs:
           Copy-Item "scripts/install.sh" $dir
           Compress-Archive -Path "$dir/*" -DestinationPath "dist/$name.zip" -Force
 
+      - name: Smoke test Windows release archive
+        if: matrix.artifact == 'windows-x64'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          .\scripts\test-release-smoke.ps1 -ArchivePath "dist/runflow-agent-${{ github.ref_name }}-${{ matrix.artifact }}.zip" -ExpectedVersion $version
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:

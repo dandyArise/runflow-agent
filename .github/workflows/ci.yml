@@ -30,3 +30,21 @@ jobs:
 
       - name: Build release
         run: cargo build --release
+
+      - name: Smoke test Windows release archive
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path "Cargo.toml" -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          $name = "runflow-agent-v$version-windows-x64"
+          $dir = Join-Path "dist" $name
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "target/release/runflow-agent.exe" $dir
+          Copy-Item "LICENSE.md" $dir
+          Copy-Item "NOTICE.md" $dir
+          Copy-Item "README.md" $dir
+          Copy-Item "docs/providers.md" (Join-Path $dir "providers.md")
+          Copy-Item "scripts/install.ps1" $dir
+          Copy-Item "scripts/install.sh" $dir
+          Compress-Archive -Path "$dir/*" -DestinationPath "dist/$name.zip" -Force
+          .\scripts\test-release-smoke.ps1 -ArchivePath "dist/$name.zip" -ExpectedVersion $version
