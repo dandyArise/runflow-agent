@@ -72,6 +72,7 @@ See [docs/install.md](docs/install.md).
 ```
 
 See [docs/demo.md](docs/demo.md).
+See [docs/v1-roadmap.md](docs/v1-roadmap.md) for V1 completion status and post-V1 boundaries.
 
 ## Usage
 
