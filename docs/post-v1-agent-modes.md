@@ -39,6 +39,8 @@ Open decisions:
 
 Goal: prepare human handoff material for failed or unstable runs.
 
+Detailed design: [oncall-design.md](oncall-design.md).
+
 Initial scope:
 
 - group incidents by job and status;
