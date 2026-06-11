@@ -41,13 +41,24 @@ New-Item -ItemType Directory -Force -Path $workspace | Out-Null
 try {
     Push-Location $workspace
 
+    New-Item -ItemType Directory -Force -Path ".flow\jobs" | Out-Null
     New-Item -ItemType Directory -Force -Path ".flow\runs\demo-failed-run" | Out-Null
     New-Item -ItemType Directory -Force -Path ".flow\agent\drafts" | Out-Null
     New-Item -ItemType Directory -Force -Path "logs\demo-failed-run\build" | Out-Null
     $draftPath = ".flow\agent\drafts\ping-workflow.yml"
 
+    Write-Utf8NoBom ".flow\jobs\ping.yml" @'
+name: ping
+version: 1
+steps:
+  - id: ping
+    type: shell
+    command: ping
+    args: ["1.1.1.1"]
+'@
+
     Write-Utf8NoBom ".flow\runs\demo-failed-run\manifest.json" @'
-{"status":"FAILED","failed_step":"build","exit_code":127}
+{"job_name":"ping","status":"FAILED","failed_step":"build","exit_code":127,"started_at":"2026-06-11T10:00:00Z","ended_at":"2026-06-11T10:01:00Z"}
 '@
 
     Write-Utf8NoBom ".flow\runs\demo-failed-run\events.jsonl" @'
@@ -78,6 +89,12 @@ try {
     $reviewOutput | Write-Host
     Write-Host ""
 
+    Write-Host "== Inspect workspace =="
+    $inspectOutput = & $Binary inspect-workspace
+    $inspectJson = & $Binary inspect-workspace --format json
+    $inspectOutput | Write-Host
+    Write-Host ""
+
     Write-Host "== Explain failed run =="
     $explainOutput = & $Binary explain-run "demo-failed-run"
     $explainJson = & $Binary explain-run "demo-failed-run" --format json
@@ -92,6 +109,7 @@ try {
 
     $draftText = $draftOutput -join "`n"
     $reviewText = $reviewOutput -join "`n"
+    $inspectText = $inspectOutput -join "`n"
     $explainText = $explainOutput -join "`n"
     $reportText = $reportOutput -join "`n"
 
@@ -102,6 +120,9 @@ $draftText
 == Review workflow ==
 $reviewText
 
+== Inspect workspace ==
+$inspectText
+
 == Explain failed run ==
 $explainText
 
@@ -111,6 +132,7 @@ $reportText
 
     Write-Utf8NoBom "demo-result.txt" $resultText
     Write-Utf8NoBom "demo-review.json" ($reviewJson -join "`n")
+    Write-Utf8NoBom "demo-inspect.json" ($inspectJson -join "`n")
     Write-Utf8NoBom "demo-explain.json" ($explainJson -join "`n")
     Write-Utf8NoBom "demo-report.json" ($reportJson -join "`n")
 
@@ -119,6 +141,7 @@ $reportText
     Write-Host ""
     Write-Host "Demo results:"
     Write-Host (Join-Path $workspace "demo-result.txt")
+    Write-Host (Join-Path $workspace "demo-inspect.json")
     Write-Host (Join-Path $workspace "demo-explain.json")
     Write-Host (Join-Path $workspace "demo-report.json")
 }

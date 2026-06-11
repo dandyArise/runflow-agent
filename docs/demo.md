@@ -4,6 +4,7 @@ This demo is local and assist-only. It creates a temporary workspace with sample
 
 - `draft`
 - `review`
+- `inspect-workspace`
 - `explain-run`
 - `report daily`
 
@@ -25,13 +26,14 @@ The demo keeps its temporary files and prints the workspace path at the end so t
 
 1. A workflow draft is generated from `Ping 1.1.1.1 every 5 minutes` into `.flow/agent/drafts/ping-workflow.yml`.
 2. The generated workflow is reviewed against the embedded RunFlow schema from that centralized draft path.
-3. A simulated failed run is explained from:
+3. The local workspace inventory is printed from `.flow/jobs`, `.flow/agent/drafts`, and `.flow/runs`.
+4. A simulated failed run is explained from:
    - `.flow/runs/demo-failed-run/manifest.json`
    - `.flow/runs/demo-failed-run/events.jsonl`
    - `logs/demo-failed-run/build/step.metadata.json`
    - `stdout.log`
    - `stderr.log`
-4. A local daily report is printed as JSON.
+5. A local daily report is printed as JSON.
 
 The failed run intentionally contains `command not found: cargo-nextest`, so `explain-run` should surface a command/path likely-cause hint.
 
@@ -42,5 +44,6 @@ The demo writes:
 - `.flow/agent/drafts/ping-workflow.yml`: generated workflow draft.
 - `demo-result.txt`: readable combined output.
 - `demo-review.json`: structured review output.
+- `demo-inspect.json`: structured workspace inventory.
 - `demo-explain.json`: structured run explanation.
 - `demo-report.json`: structured daily report.
