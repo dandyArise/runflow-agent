@@ -58,6 +58,8 @@ Open decisions:
 
 Goal: not approved yet.
 
+Detailed design: [autopilot-design.md](autopilot-design.md).
+
 Autopilot would require a separate permission model, explicit user opt-in, dry-run previews, audit hardening, and rollback design. Until those exist, autopilot remains out of scope.
 
 Hard requirements before implementation:
