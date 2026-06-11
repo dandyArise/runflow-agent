@@ -2,6 +2,7 @@ pub mod doctor;
 pub mod draft;
 pub mod explain_run;
 pub mod inspect_workspace;
+pub mod oncall;
 pub mod report;
 pub mod review;
 pub mod self_update;

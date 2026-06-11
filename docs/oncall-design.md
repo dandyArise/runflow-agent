@@ -1,6 +1,6 @@
 # Oncall Mode Design
 
-Status: design-only, post-V1.
+Status: implemented post-V1 baseline.
 
 `oncall` prepares human handoff material for failed or unstable RunFlow activity. It is a local evidence pack generator, not an incident responder. It must not execute jobs, cancel runs, rerun steps, execute shell commands, send notifications, call webhooks, or contact external APIs by default.
 
@@ -36,7 +36,7 @@ runflow-agent oncall --root . --format json
 runflow-agent oncall --root . --output .\.flow\agent\oncall\handoff.json
 ```
 
-Initial implementation should ship a single-shot command only. If continuous oncall monitoring is needed later, it should build on `watch` snapshots rather than adding a second polling loop.
+Current implementation ships a single-shot command only. If continuous oncall monitoring is needed later, it should build on `watch` snapshots rather than adding a second polling loop.
 
 ## Inputs
 
@@ -175,15 +175,16 @@ Allowed:
 - explicit `--output` writes under user-selected paths;
 - audit writes under `.flow/agent/audit.jsonl`.
 
-## Implementation Plan
+## Implementation Status
 
-1. Add `oncall` command routing and help text.
-2. Reuse `inspect_workspace::inspect` as the baseline evidence source.
-3. Add incident builder for failed and error runs.
-4. Add optional filters: `--run-id`, `--job`, `--window-hours`.
-5. Add text and JSON output.
-6. Add explicit `--output` support and audit writes.
-7. Add tests for grouping, severity, filters, strict JSON, denied language, and output writes.
+- Done: `oncall` command routing and help text.
+- Done: reuse `inspect_workspace::inspect` as the baseline evidence source.
+- Done: incident builder for failed and error runs.
+- Done: optional filters: `--run-id`, `--job`, `--window-hours`.
+- Done: text and JSON output.
+- Done: explicit `--output` support and audit writes.
+- Done: tests for grouping, severity, filters, strict JSON, denied language, and output writes.
+- Later: continuous oncall mode, only if built on `watch` snapshots.
 
 ## Tests
 
