@@ -8,6 +8,8 @@ pub struct DraftModelResponse {
     pub kind: String,
     pub workflow_yaml: String,
     #[serde(default)]
+    pub needs_tool: Option<String>,
+    #[serde(default)]
     pub warnings: Vec<String>,
 }
 
