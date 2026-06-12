@@ -8,6 +8,13 @@
   "properties": {
     "kind": { "const": "draft_workflow" },
     "workflow_yaml": { "type": "string", "minLength": 1 },
+    "needs_tool": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ],
+      "description": "Tool or plugin needed by the request but not declared in registry v1. The workflow_yaml must not invent a plugin for this."
+    },
     "validation": {
       "type": "object",
       "required": ["valid", "errors"],

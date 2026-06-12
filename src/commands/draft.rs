@@ -23,6 +23,22 @@ pub fn run(args: &[String]) -> Result<CliResult, String> {
     };
 
     let mut draft = agent::draft_workflow_with_model(&request, &model_config)?;
+    if let Some(tool) = draft
+        .needs_tool
+        .as_ref()
+        .filter(|tool| !tool.trim().is_empty())
+    {
+        let marker = format!("needs_tool: {tool}");
+        if !draft
+            .warnings
+            .iter()
+            .any(|warning| warning.contains(&marker))
+        {
+            draft.warnings.push(format!(
+                "{marker}; configure the tool before replacing the placeholder."
+            ));
+        }
+    }
     let mut validation = runflow::validate_workflow(&draft.workflow_yaml);
     for _ in 0..2 {
         if validation.valid || model_config.is_mock() {

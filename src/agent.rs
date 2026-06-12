@@ -20,6 +20,7 @@ const MAX_REPORT_CHARS: usize = 4_000;
 #[derive(Debug)]
 pub struct Draft {
     pub workflow_yaml: String,
+    pub needs_tool: Option<String>,
     pub warnings: Vec<String>,
 }
 
@@ -103,6 +104,7 @@ pub fn draft_workflow(request: &str) -> Draft {
     let lower = request.to_lowercase();
     let name = util::slugify(request, "draft-workflow");
     let mut warnings = Vec::new();
+    let needs_tool = infer_needed_tool(&lower);
     let mut yaml = format!("name: {name}\nversion: 1\nschema_version: 1\n");
 
     if let Some(minutes) = extract_every_minutes(&lower) {
@@ -114,7 +116,12 @@ pub fn draft_workflow(request: &str) -> Draft {
     }
 
     yaml.push_str("\nsteps:\n");
-    if lower.contains("ping") {
+    if let Some(tool) = needs_tool.as_ref() {
+        yaml.push_str("  - name: needs-tool\n    type: command\n    timeout: 30s\n    run:\n      command: echo\n      args: [\"TODO: configure required tool before replacing this placeholder\"]\n");
+        warnings.push(format!(
+            "needs_tool: {tool}; generated a safe placeholder instead of inventing a plugin."
+        ));
+    } else if lower.contains("ping") {
         let host = extract_ipv4(request).unwrap_or_else(|| "1.1.1.1".to_string());
         yaml.push_str("  - name: ping\n    type: command\n    timeout: 30s\n    run:\n      command: ping\n      args: [\"-n\", \"4\", \"");
         yaml.push_str(&host);
@@ -134,6 +141,7 @@ pub fn draft_workflow(request: &str) -> Draft {
 
     Draft {
         workflow_yaml: yaml,
+        needs_tool,
         warnings,
     }
 }
@@ -148,9 +156,19 @@ pub fn draft_workflow_with_model(request: &str, config: &ModelConfig) -> Result<
     let raw = model::chat(config, system, &user)?;
     let parsed: DraftModelResponse = decode_model_json(&raw, "draft_workflow")?;
     let mut warnings = parsed.warnings;
+    if let Some(tool) = parsed
+        .needs_tool
+        .as_ref()
+        .filter(|tool| !tool.trim().is_empty())
+    {
+        warnings.push(format!(
+            "needs_tool: {tool}; no plugin step was generated because the tool is not declared in registry v1."
+        ));
+    }
     let workflow_yaml = adapt_workflow_for_host(parsed.workflow_yaml, &mut warnings);
     Ok(Draft {
         workflow_yaml,
+        needs_tool: parsed.needs_tool,
         warnings,
     })
 }
@@ -170,9 +188,19 @@ pub fn repair_draft_workflow_with_model(
     let raw = model::chat(config, system, &user)?;
     let parsed: DraftModelResponse = decode_model_json(&raw, "draft_workflow")?;
     let mut warnings = parsed.warnings;
+    if let Some(tool) = parsed
+        .needs_tool
+        .as_ref()
+        .filter(|tool| !tool.trim().is_empty())
+    {
+        warnings.push(format!(
+            "needs_tool: {tool}; no plugin step was generated because the tool is not declared in registry v1."
+        ));
+    }
     let workflow_yaml = adapt_workflow_for_host(parsed.workflow_yaml, &mut warnings);
     Ok(Draft {
         workflow_yaml,
+        needs_tool: parsed.needs_tool,
         warnings,
     })
 }
@@ -180,7 +208,7 @@ pub fn repair_draft_workflow_with_model(
 fn draft_workflow_prompt(request: &str) -> String {
     let host = HostContext::current();
     format!(
-        "Create a RunFlow workflow draft for this request:\n\n{}\n\nHost context:\n- Target host OS: {}\n- Target host family: {}\n- Ping count flag for this host: {}\n- Generate commands and arguments compatible with this host.\n\nSchema constraints:\n- Return only JSON, no markdown and no prose.\n- workflow_yaml must be valid YAML for the embedded RunFlow workflow schema.\n- Prefer a minimal workflow with only name, version, schema_version, schedule, and steps unless the request explicitly requires more.\n- Do not add optional top-level fields unless needed by the request.\n- Top-level name must be kebab-case: lowercase letters, digits, and hyphens only; no spaces, underscores, dots, or uppercase.\n- Step names must use lowercase letters, digits, hyphens, or underscores; no dots, spaces, or uppercase.\n- schedule must be false, a cron string, or an object with cron/timezone/enabled. Never use schedule: true.\n- Allowed top-level fields: name, version, schema_version, schedule, failure_policy, concurrency, limits, locks, secrets, notifications, retention, steps, tests.\n- If concurrency is required, policy must be one of allow, forbid, queue, replace.\n- Allowed step types: command, plugin, sleep, wait_until.\n- For command steps, put timeout at the step level as a duration string such as timeout: 30s.\n- Never put timeout inside run.\n- Prefer structured run.command and run.args. Do not inline secrets. Do not run anything.\n\nValid YAML example for this host:\nname: ping-monitor\nversion: 1\nschema_version: 1\nschedule: false\nsteps:\n  - name: ping\n    type: command\n    timeout: 30s\n    run:\n      command: ping\n      args: [\"{}\", \"4\", \"1.1.1.1\"]\n\nReturn exactly this JSON shape:\n{{\"kind\":\"draft_workflow\",\"workflow_yaml\":\"<yaml>\",\"warnings\":[\"...\"]}}",
+        "Create a RunFlow workflow draft for this request:\n\n{}\n\nHost context:\n- Target host OS: {}\n- Target host family: {}\n- Ping count flag for this host: {}\n- Generate commands and arguments compatible with this host.\n\nSchema constraints:\n- Return only JSON, no markdown and no prose.\n- workflow_yaml must be valid YAML for the embedded RunFlow workflow schema.\n- Prefer a minimal workflow with only name, version, schema_version, schedule, and steps unless the request explicitly requires more.\n- Do not add optional top-level fields unless needed by the request.\n- Top-level name must be kebab-case: lowercase letters, digits, and hyphens only; no spaces, underscores, dots, or uppercase.\n- Step names must use lowercase letters, digits, hyphens, or underscores; no dots, spaces, or uppercase.\n- schedule must be false, a cron string, or an object with cron/timezone/enabled. Never use schedule: true.\n- Allowed top-level fields: name, version, schema_version, schedule, failure_policy, concurrency, limits, locks, secrets, notifications, retention, registry, steps, tests.\n- registry is optional and must use version: 1 with tools[].id and tools[].kind when a known tool/plugin is explicitly declared by the request.\n- Do not invent plugins, tools, plugin_id values, registry entries, or provider names.\n- If the request needs an undeclared tool/plugin/integration, do not create a plugin step. Set needs_tool to the missing tool name and generate a safe command placeholder instead.\n- Plugin steps are allowed only when registry.version: 1 declares the exact plugin_id in registry.tools[].id with kind: plugin.\n- If concurrency is required, policy must be one of allow, forbid, queue, replace.\n- Allowed step types: command, plugin, sleep, wait_until.\n- For command steps, put timeout at the step level as a duration string such as timeout: 30s.\n- Never put timeout inside run.\n- Prefer structured run.command and run.args. Do not inline secrets. Do not run anything.\n\nValid YAML example for this host:\nname: ping-monitor\nversion: 1\nschema_version: 1\nschedule: false\nsteps:\n  - name: ping\n    type: command\n    timeout: 30s\n    run:\n      command: ping\n      args: [\"{}\", \"4\", \"1.1.1.1\"]\n\nReturn exactly this JSON shape:\n{{\"kind\":\"draft_workflow\",\"workflow_yaml\":\"<yaml>\",\"needs_tool\":null,\"warnings\":[\"...\"]}}",
         util::truncate(request, MAX_REQUEST_CHARS),
         host.os,
         host.family,
@@ -766,6 +794,22 @@ fn extract_every_minutes(text: &str) -> Option<u32> {
     }
 }
 
+fn infer_needed_tool(lower_request: &str) -> Option<String> {
+    [
+        ("slack", "slack"),
+        ("discord", "discord"),
+        ("teams", "microsoft-teams"),
+        ("webhook", "webhook"),
+        ("jira", "jira"),
+        ("github", "github"),
+        ("s3", "s3"),
+        ("postgres", "postgres"),
+        ("database", "database"),
+    ]
+    .iter()
+    .find_map(|(needle, tool)| lower_request.contains(needle).then(|| (*tool).to_string()))
+}
+
 fn extract_ipv4(text: &str) -> Option<String> {
     text.split_whitespace()
         .map(|part| part.trim_matches(|c: char| !c.is_ascii_digit() && c != '.'))
@@ -1243,12 +1287,27 @@ mod tests {
         let prompt = draft_workflow_prompt("Ping 1.1.1.1");
         assert!(prompt.contains("Top-level name must be kebab-case"));
         assert!(prompt.contains("Never put timeout inside run"));
+        assert!(prompt.contains("needs_tool"));
+        assert!(prompt.contains("Do not invent plugins"));
+        assert!(prompt.contains("registry.version: 1"));
         assert!(prompt.contains("Never use schedule: true"));
         assert!(prompt.contains("allow, forbid, queue, replace"));
         assert!(prompt.contains("timeout: 30s\n    run:"));
         assert!(prompt.contains("Target host OS"));
         assert!(prompt.contains("Target host family"));
         assert!(prompt.contains(host.ping_count_flag()));
+    }
+
+    #[test]
+    fn draft_marks_missing_tool_without_plugin_step() {
+        let draft = draft_workflow("Send a Slack notification when backup fails");
+        assert_eq!(draft.needs_tool.as_deref(), Some("slack"));
+        assert!(draft.workflow_yaml.contains("type: command"));
+        assert!(!draft.workflow_yaml.contains("type: plugin"));
+        assert!(draft
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("needs_tool: slack")));
     }
 
     #[test]

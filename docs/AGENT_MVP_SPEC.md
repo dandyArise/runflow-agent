@@ -283,6 +283,7 @@ Allowed top-level fields in v1:
 - `secrets`
 - `notifications`
 - `retention`
+- `registry`
 - `steps`
 - `tests`
 
@@ -298,6 +299,9 @@ Rules:
 - prefer structured command form: `run.command` + `run.args`;
 - avoid shell strings unless the user explicitly asks for shell behavior;
 - do not invent fields outside the schema;
+- do not invent plugins, tools, plugin IDs, registry entries, or provider names;
+- use `registry.version: 1` with `registry.tools[].id` and `kind: plugin` before referencing a plugin step;
+- if a request needs an undeclared tool/plugin/integration, set `needs_tool` in the draft response and generate a safe placeholder instead of a plugin step;
 - do not inline secrets;
 - use `secrets.<name>.from_env` for secret references;
 - use `schedule: false` or omit `schedule` for manual workflows;
