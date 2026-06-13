@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.9
+
+- Added registry v1 support for declared tools and plugins.
+- Added `needs_tool` to draft responses so missing integrations are explicit.
+- Prevented drafts from inventing undeclared plugin steps.
+- Added standard CLI help for top-level commands, nested commands, and `--version`.
+
 ## 0.1.8
 
 - Added `watch --once` and continuous `watch` mode for passive local RunFlow snapshots.
